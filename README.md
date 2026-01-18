@@ -56,6 +56,49 @@ This workflow:
 3. Prompts you to click on masks for: green, tee, fairway, and bunkers
 4. Saves selections to `output/metadata/interactive_selections.json`
 
+### Visual Workflow Guide
+
+The interactive selection workflow guides you through assigning features to each hole step-by-step. Below is a visual guide using the Pictatinny course imagery:
+
+#### Step 1: Generate Candidate Masks
+
+The pipeline first generates candidate masks using SAM. The GUI displays all masks overlaid on the satellite image:
+
+![Step 1: Candidate Masks](docs/images/workflow_step1_masks.jpg)
+
+Yellow highlights indicate candidate masks that can be selected. Each mask is labeled with an index number.
+
+#### Step 2: Select Green
+
+For each hole (1-18), you'll be prompted to click on the green:
+
+![Step 2: Select Green](docs/images/workflow_step2_green.jpg)
+
+Click on the mask(s) that represent the green for the current hole. Selected masks are highlighted in red.
+
+#### Step 3: Select Fairway
+
+Next, select fairway areas:
+
+![Step 3: Select Fairway](docs/images/workflow_step3_fairway.jpg)
+
+You can click multiple masks to select all fairway regions for the hole.
+
+#### Step 4: Select Bunkers
+
+Finally, select bunkers:
+
+![Step 4: Select Bunkers](docs/images/workflow_step4_bunkers.jpg)
+
+#### GUI Controls
+
+- **Click on mask**: Toggle selection (selected = red highlight)
+- **Enter/Space**: Confirm selection for current feature type
+- **Esc**: Clear current selection
+- **Done button**: Confirm and move to next feature type
+
+The workflow repeats for each hole until all 18 holes are assigned.
+
 ### Generate Masks Only
 
 ```bash
