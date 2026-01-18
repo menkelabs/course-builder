@@ -18,7 +18,7 @@ from .classify import MaskClassifier
 from .gating import ConfidenceGate
 from .polygons import PolygonGenerator
 from .holes import HoleAssigner
-from .svg import SVGGenerator
+from .svg import SVGGenerator, SVGCleaner
 from .export import PNGExporter
 
 __all__ = [
@@ -29,5 +29,6 @@ __all__ = [
     "PolygonGenerator",
     "HoleAssigner",
     "SVGGenerator",
+    "SVGCleaner",
     "PNGExporter",
 ]
