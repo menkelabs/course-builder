@@ -1,484 +1,698 @@
-# Embabel Automation Plan for Course Builder
+# Embabel Automation Plan for OPCD Course Builder
 
 ## Overview
 
-This document outlines an automation strategy using **Embabel** as the orchestration layer, with **MCP (Model Context Protocol) tools** designed specifically to facilitate the **"None to Done"** workflow. Every tool exists to move a course project from concept to completion.
+This document outlines automation for the **Open Platform Course Designer (OPCD)** workflow using **Embabel** as the orchestration layer with **MCP tools** for each application in the pipeline. The goal is to automate the "None to Done" process of creating golf courses for GSPro and other 3D applications.
 
 ---
 
-## Table of Contents
+## The OPCD Workflow (None to Done)
 
-1. [The None to Done Philosophy](#the-none-to-done-philosophy)
-2. [Workflow Stages](#workflow-stages)
-3. [MCP Tools by Workflow Stage](#mcp-tools-by-workflow-stage)
-4. [Tool Implementations](#tool-implementations)
-5. [Embabel Orchestration](#embabel-orchestration)
-6. [Implementation Roadmap](#implementation-roadmap)
-
----
-
-## The None to Done Philosophy
-
-### Core Principle
-
-**Every MCP tool exists solely to facilitate moving from "None" (no content) to "Done" (published course).**
-
-Tools are not general-purpose utilities—they are purpose-built to support specific stages of the course creation workflow. If a tool doesn't directly contribute to completing a course, it doesn't belong in the system.
-
-### The Complete Journey
+The complete workflow consists of 24 steps across multiple applications:
 
 ```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  NONE   │───▶│ CONCEPT │───▶│  DRAFT  │───▶│  BUILD  │───▶│ REVIEW  │───▶│  DONE   │
-│         │    │         │    │         │    │         │    │         │    │         │
-│ Empty   │    │ Ideas & │    │ Scripts │    │ Assets  │    │ Testing │    │Published│
-│ Project │    │ Outline │    │ & Plans │    │ & Scenes│    │ & Polish│    │ Course  │
-└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
+LIDAR → Unity (Terrain) → Inkscape (SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final) → GreenKeeper
 ```
 
 ---
 
-## Workflow Stages
+## Step-by-Step Workflow with MCP Tool Mapping
 
-### Stage 1: NONE → CONCEPT
+### Phase 1: Terrain Creation (Steps 1-2)
 
-**Goal**: Transform an idea into a structured course outline
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 1 | Download and follow tutorial for creating heightmap from LIDAR data | `lidar_to_heightmap` |
+| 2 | Set up Terrain in Unity with LIDAR and course dimensions | `unity_setup_terrain` |
 
-| Input | Output |
-|-------|--------|
-| Course topic/idea | Structured outline with modules, lessons, learning objectives |
-
-### Stage 2: CONCEPT → DRAFT
-
-**Goal**: Expand outline into detailed content plans
-
-| Input | Output |
-|-------|--------|
-| Course outline | Scripts, storyboards, asset requirements, interaction designs |
-
-### Stage 3: DRAFT → BUILD
-
-**Goal**: Create all assets and assemble the course
-
-| Input | Output |
-|-------|--------|
-| Content plans | 3D models, scenes, animations, audio, interactive elements |
-
-### Stage 4: BUILD → REVIEW
-
-**Goal**: Test and refine the course
-
-| Input | Output |
-|-------|--------|
-| Assembled course | Tested, polished, QA-passed course |
-
-### Stage 5: REVIEW → DONE
-
-**Goal**: Package and publish the final course
-
-| Input | Output |
-|-------|--------|
-| Reviewed course | Published, deployed, documented course |
-
----
-
-## MCP Tools by Workflow Stage
-
-### Stage 1 Tools: NONE → CONCEPT
-
-These tools help transform raw ideas into structured course plans.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `course_outline_from_topic` | Generate initial course structure from a topic description |
-| `learning_objectives_generator` | Create measurable learning objectives for each module |
-| `module_structure_builder` | Break course into logical modules and lessons |
-| `prerequisite_analyzer` | Identify and document required prior knowledge |
-| `scope_estimator` | Estimate content volume and complexity |
+#### MCP Tools - LIDAR/GIS Processing
 
 ```yaml
-# Example: Starting from nothing
-input:
-  topic: "Introduction to 3D Modeling for Game Development"
-  target_audience: "Beginners"
-  duration: "8 hours"
-
-output:
-  course_outline:
-    modules: 6
-    lessons: 24
-    learning_objectives: 48
-    asset_requirements: preliminary_list
+lidar_to_heightmap:
+  description: "Convert LIDAR data to Unity-compatible heightmap"
+  inputs:
+    - lidar_source: "URL or file path to LIDAR data"
+    - bounds: "Geographic bounds of the course"
+    - resolution: "Heightmap resolution"
+  outputs:
+    - heightmap_raw: "RAW heightmap file"
+    - dimensions: "Real-world dimensions for Unity"
 ```
 
-### Stage 2 Tools: CONCEPT → DRAFT
-
-These tools expand the outline into actionable content plans.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `lesson_script_generator` | Create detailed scripts for each lesson |
-| `storyboard_creator` | Generate visual storyboards for scenes |
-| `asset_requirements_compiler` | List all 3D models, textures, audio needed |
-| `interaction_designer` | Define interactive elements and user flows |
-| `quiz_question_generator` | Create assessment questions from objectives |
+#### MCP Tools - Unity Terrain Setup
 
 ```yaml
-# Example: Expanding a lesson
-input:
-  lesson: "Understanding Mesh Topology"
-  learning_objectives:
-    - "Identify vertices, edges, and faces"
-    - "Explain why topology matters for animation"
-
-output:
-  script: detailed_narration_script
-  storyboard: 12_scene_visual_plan
-  assets_needed:
-    - 3d_models: ["cube_topology_demo", "character_topology_comparison"]
-    - textures: ["wireframe_overlay"]
-    - audio: ["narration_track"]
-  interactions:
-    - type: "click_to_highlight"
-      targets: ["vertices", "edges", "faces"]
-```
-
-### Stage 3 Tools: BUILD (Blender MCP)
-
-These tools create the actual 3D content in Blender.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `create_lesson_environment` | Build the 3D scene for a specific lesson |
-| `generate_demonstration_model` | Create models that demonstrate concepts |
-| `setup_camera_sequence` | Configure camera positions for lesson flow |
-| `apply_educational_materials` | Add materials optimized for clarity |
-| `export_for_unity` | Export assets in Unity-ready format |
-
-```yaml
-# Example: Building lesson assets
-input:
-  lesson_id: "topology_basics"
-  storyboard: storyboard_reference
-  asset_list: ["cube_topology_demo", "character_topology_comparison"]
-
-output:
-  blender_files:
-    - "topology_basics_scene.blend"
-  exported_assets:
-    - "cube_topology_demo.fbx"
-    - "character_topology_comparison.fbx"
-  textures:
-    - "wireframe_overlay.png"
-```
-
-### Stage 3 Tools: BUILD (Unity MCP)
-
-These tools assemble the course in Unity.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `create_lesson_scene` | Set up Unity scene from storyboard |
-| `import_lesson_assets` | Bring in Blender exports with correct settings |
-| `setup_lesson_progression` | Configure lesson flow and navigation |
-| `add_interactive_elements` | Implement click/hover/drag interactions |
-| `integrate_audio_narration` | Sync audio with scene progression |
-| `configure_assessment` | Set up quizzes and knowledge checks |
-
-```yaml
-# Example: Assembling in Unity
-input:
-  lesson_id: "topology_basics"
-  assets: [exported_blender_assets]
-  script: narration_script
-  interactions: interaction_definitions
-
-output:
-  unity_scene: "Lesson_TopologyBasics.unity"
-  prefabs_created: 5
-  interactions_configured: 3
-  audio_synced: true
-```
-
-### Stage 3 Tools: BUILD (Supporting Tools)
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `generate_narration_audio` | Create voiceover from scripts (TTS or guide for recording) |
-| `create_ui_graphics` | Generate UI elements for the lesson |
-| `optimize_textures` | Prepare textures at correct resolutions |
-| `generate_thumbnails` | Create preview images for lessons |
-
-### Stage 4 Tools: BUILD → REVIEW
-
-These tools test and validate the course.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `run_playthrough_test` | Automated walkthrough of all lessons |
-| `check_learning_objective_coverage` | Verify all objectives are addressed |
-| `validate_interactions` | Test all interactive elements work |
-| `accessibility_check` | Verify accessibility requirements |
-| `performance_profile` | Check performance on target platforms |
-
-```yaml
-# Example: Review process
-input:
-  course_build: complete_course
-
-output:
-  test_report:
-    lessons_tested: 24
-    interactions_validated: 156
-    objectives_covered: 48/48
-    accessibility_score: 94%
-    performance_rating: "Good"
-  issues_found:
-    - lesson_12: "Audio desync at 2:34"
-    - lesson_18: "Interaction not responding on mobile"
-```
-
-### Stage 5 Tools: REVIEW → DONE
-
-These tools finalize and publish the course.
-
-| Tool | Purpose in Workflow |
-|------|---------------------|
-| `build_for_platform` | Create builds for target platforms |
-| `package_scorm` | Create LMS-compatible package |
-| `generate_documentation` | Create instructor guides, syllabi |
-| `create_marketing_assets` | Generate promotional materials |
-| `deploy_to_staging` | Push to staging environment |
-| `publish_release` | Final deployment to production |
-
-```yaml
-# Example: Publishing
-input:
-  reviewed_course: qa_passed_build
-  target_platforms: ["web", "mobile", "desktop"]
-
-output:
-  builds:
-    - web_build: "course_v1.0_web.zip"
-    - mobile_build: "course_v1.0.apk"
-    - desktop_build: "course_v1.0_win.exe"
-  scorm_package: "course_v1.0_scorm.zip"
-  documentation:
-    - instructor_guide.pdf
-    - learner_syllabus.pdf
-  status: DONE
+unity_setup_terrain:
+  description: "Create and configure Unity terrain from heightmap"
+  inputs:
+    - heightmap: "Path to heightmap file"
+    - dimensions: "Width, length, height values"
+    - project_path: "Unity project location"
+  outputs:
+    - terrain_object: "Configured Unity terrain"
+    - scene: "Scene with terrain ready for overlay"
 ```
 
 ---
 
-## Tool Implementations
+### Phase 2: Course Tracing in Inkscape (Steps 3-4)
 
-### Blender MCP Server
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 3 | Trace Course using Inkscape | `inkscape_trace_course` |
+| 4 | Export Course as PNG for opening in Unity | `inkscape_export_png` |
 
-The Blender MCP server focuses exclusively on course asset creation.
+#### MCP Tools - Inkscape Automation
 
-```python
-class BlenderCourseMCP:
-    """
-    Blender MCP tools exist only to create assets 
-    that move lessons from draft to built.
-    """
-    
-    # Stage 3 Tools - Asset Creation
-    
-    def create_lesson_environment(self, lesson_spec: dict):
-        """Create complete 3D environment for a lesson."""
-        # Reads storyboard, creates scene, exports for Unity
-        pass
-    
-    def generate_demonstration_model(self, concept: str, style: str):
-        """Create a model that demonstrates a specific concept."""
-        # Purpose-built for educational clarity
-        pass
-    
-    def setup_camera_sequence(self, storyboard: dict):
-        """Configure cameras to match storyboard shots."""
-        # Each camera position serves the lesson narrative
-        pass
-    
-    def export_for_unity(self, scene: str):
-        """Export all assets Unity-ready."""
-        # Optimized for the course runtime
-        pass
+```yaml
+inkscape_create_project:
+  description: "Set up new Inkscape file with OPCD palette and layers"
+  inputs:
+    - satellite_image: "Overlay image of the course"
+    - course_name: "Name for the project"
+  outputs:
+    - inkscape_file: "Configured .svg file with layers for each hole"
+
+inkscape_create_layer:
+  description: "Create a hole layer with proper naming"
+  inputs:
+    - file: "Inkscape SVG file"
+    - hole_number: "1-18, 98 (cart paths), or 99 (outer mesh)"
+  outputs:
+    - layer: "New layer added to SVG"
+
+inkscape_draw_shape:
+  description: "Draw a course feature shape"
+  inputs:
+    - file: "Inkscape SVG file"
+    - layer: "Target layer"
+    - shape_type: "fairway|rough|semi_rough|deep_rough|green|fringe|bunker|water|tee"
+    - points: "Array of coordinate points"
+    - fill_color: "OPCD palette color"
+  outputs:
+    - shape: "Shape added to layer"
+
+inkscape_create_fringe:
+  description: "Create fringe by duplicating and insetting a shape"
+  inputs:
+    - file: "Inkscape SVG file"
+    - source_shape: "Shape to duplicate (e.g., green)"
+    - inset_amount: "Inset distance for fringe"
+  outputs:
+    - fringe_shape: "New fringe shape"
+
+inkscape_union_shapes:
+  description: "Union meshes to connect features (e.g., tee boxes)"
+  inputs:
+    - file: "Inkscape SVG file"
+    - shapes: "Array of shapes to union"
+  outputs:
+    - unified_shape: "Combined shape"
+
+inkscape_fix_nodes:
+  description: "Fix problematic nodes (autosmooth, remove duplicates)"
+  inputs:
+    - file: "Inkscape SVG file"
+    - shape: "Shape to fix"
+  outputs:
+    - fixed_shape: "Shape with corrected nodes"
+
+inkscape_export_png:
+  description: "Export course as PNG for Unity overlay"
+  inputs:
+    - file: "Inkscape SVG file"
+    - resolution: "Export resolution"
+  outputs:
+    - png_file: "Exported PNG image"
 ```
 
-### Unity MCP Server
+---
 
-The Unity MCP server focuses exclusively on course assembly and delivery.
+### Phase 3: Unity Terrain Refinement (Steps 5-7)
 
-```csharp
-// Unity MCP tools exist only to assemble and deliver courses
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 5 | Place Exported PNG in first paint slot on Terrain in Unity | `unity_apply_terrain_overlay` |
+| 6 | Adjust contours of Terrain and modify SVG file as needed | `unity_adjust_terrain_contours` |
+| 7 | Export Terrain using ExportTerrain.cs - export as Terrain.obj | `unity_export_terrain` |
 
-public class UnityCourseMCP
-{
-    // Stage 3 Tools - Assembly
-    
-    public void CreateLessonScene(LessonSpec spec)
-    {
-        // Build scene from storyboard specification
-    }
-    
-    public void SetupLessonProgression(ProgressionConfig config)
-    {
-        // Configure how learner moves through content
-    }
-    
-    public void AddInteractiveElement(InteractionDef def)
-    {
-        // Add interaction that supports learning objective
-    }
-    
-    // Stage 4 Tools - Testing
-    
-    public TestReport RunPlaythroughTest(Course course)
-    {
-        // Automated testing of complete course
-    }
-    
-    // Stage 5 Tools - Publishing
-    
-    public Build BuildForPlatform(Platform target)
-    {
-        // Create deployable build
-    }
-}
+#### MCP Tools - Unity Terrain Operations
+
+```yaml
+unity_apply_terrain_overlay:
+  description: "Apply PNG overlay to terrain paint slot"
+  inputs:
+    - project_path: "Unity project"
+    - terrain: "Target terrain object"
+    - png_file: "Course overlay PNG"
+    - paint_slot: "Slot number (typically 0)"
+  outputs:
+    - terrain: "Terrain with overlay applied"
+
+unity_adjust_terrain_contours:
+  description: "Modify terrain height at specific locations"
+  inputs:
+    - project_path: "Unity project"
+    - terrain: "Target terrain"
+    - adjustments: "Array of {position, height, radius, falloff}"
+  outputs:
+    - terrain: "Modified terrain"
+
+unity_export_terrain:
+  description: "Export terrain as OBJ using ExportTerrain.cs"
+  inputs:
+    - project_path: "Unity project"
+    - terrain: "Terrain to export"
+    - resolution: "full|half|quarter"
+    - output_path: "Where to save Terrain.obj"
+  outputs:
+    - terrain_obj: "Exported OBJ file"
+```
+
+---
+
+### Phase 4: SVG Conversion (Step 8)
+
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 8 | Run SVG file through GSProSVGConvert.exe to get "svg-converted" file | `svg_convert` |
+
+#### MCP Tools - SVG Conversion
+
+```yaml
+svg_convert:
+  description: "Run GSProSVGConvert.exe to prepare SVG for Blender"
+  inputs:
+    - svg_file: "Original Inkscape SVG"
+  outputs:
+    - converted_svg: "SVG file ready for Blender import"
+```
+
+---
+
+### Phase 5: Blender Mesh Operations (Steps 9-16)
+
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 9 | Open OPCDcourseconversion.blend file (Blender 2.83 LTS) | `blender_open_opcd_template` |
+| 10 | Install Boundary Align Remesh, Mesh Tools, Loop Tools, OPCD Blender Tools | `blender_install_addons` |
+| 11 | Import SVG | `blender_import_svg` |
+| 12 | Import Terrain.obj | `blender_import_terrain` |
+| 13 | Convert Mats and Cut | `blender_convert_and_cut` |
+| 14 | Convert Meshes (conform to terrain) | `blender_convert_meshes` |
+| 15 | Add Bulkheads, Curbs, WaterPlanes or other peripherals | `blender_add_peripherals` |
+| 16 | Export FBX files | `blender_export_fbx` |
+
+#### MCP Tools - Blender Operations
+
+```yaml
+blender_open_opcd_template:
+  description: "Open the OPCDcourseconversion.blend template file"
+  inputs:
+    - template_path: "Path to OPCDcourseconversion.blend"
+  outputs:
+    - blender_session: "Active Blender session with template"
+
+blender_install_addons:
+  description: "Install required OPCD addons if not present"
+  inputs:
+    - addons:
+      - "Boundary Align Remesh"
+      - "Mesh Tools"
+      - "Loop Tools"
+      - "OPCD Blender Tools"
+  outputs:
+    - status: "Addons installed and enabled"
+
+blender_import_svg:
+  description: "Import converted SVG file"
+  inputs:
+    - svg_file: "Path to svg-converted file"
+  outputs:
+    - svg_curves: "Imported SVG curves in Blender"
+
+blender_import_terrain:
+  description: "Import Terrain.obj from Unity export"
+  inputs:
+    - terrain_obj: "Path to Terrain.obj"
+  outputs:
+    - terrain_mesh: "Imported terrain mesh"
+
+blender_convert_and_cut:
+  description: "Run Convert Mats and Cut operation from OPCD Tools"
+  inputs:
+    - svg_curves: "Imported SVG"
+    - terrain_mesh: "Imported terrain"
+  outputs:
+    - cut_meshes: "Meshes cut by hole"
+
+blender_convert_meshes:
+  description: "Conform shapes to terrain surface"
+  inputs:
+    - cut_meshes: "Cut mesh shapes"
+    - terrain_mesh: "Terrain to conform to"
+  outputs:
+    - conformed_meshes: "Meshes projected onto terrain"
+
+blender_fix_donut:
+  description: "Fix cart path donut corruption (Hole98)"
+  inputs:
+    - cart_path_mesh: "Cart path with donut issue"
+  outputs:
+    - fixed_mesh: "Corrected cart path mesh"
+
+blender_add_curbs:
+  description: "Add curbs to cart paths"
+  inputs:
+    - cart_path: "Cart path mesh"
+    - curb_height: "Height of curbs"
+    - curb_width: "Width of curbs"
+  outputs:
+    - cart_path_with_curbs: "Cart path with curbs added"
+
+blender_add_bulkhead:
+  description: "Add bulkhead to water features"
+  inputs:
+    - water_mesh: "Water feature mesh"
+    - bulkhead_style: "Style parameters"
+  outputs:
+    - water_with_bulkhead: "Water with bulkhead edging"
+
+blender_add_water_plane:
+  description: "Add water plane to water hazards"
+  inputs:
+    - water_boundary: "Water feature boundary"
+    - water_level: "Height of water surface"
+  outputs:
+    - water_plane: "Water plane mesh"
+
+blender_retopo_hole99:
+  description: "Retopologize Hole99 outer mesh"
+  inputs:
+    - outer_mesh: "Hole99 mesh"
+  outputs:
+    - retopo_mesh: "Clean retopologized outer mesh"
+
+blender_export_fbx:
+  description: "Export all meshes as FBX files"
+  inputs:
+    - meshes: "All course meshes"
+    - output_directory: "Export location"
+    - per_hole: "Export per hole or combined"
+  outputs:
+    - fbx_files: "Array of exported FBX files"
+```
+
+---
+
+### Phase 6: Unity Final Assembly (Steps 17-22)
+
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 17 | Import FBX files into Unity | `unity_import_fbx` |
+| 18 | Add colliders to FBX files | `unity_add_colliders` |
+| 19 | Add FBX files to the Unity Scene | `unity_place_meshes` |
+| 20 | Add Materials to the Meshes (drag/drop or SetMaterials.cs) | `unity_apply_materials` |
+| 21 | Plant vegetation and other objects | `unity_place_vegetation` |
+| 22 | Course Asset Bundle Build Out | `unity_build_asset_bundle` |
+
+#### MCP Tools - Unity Final Assembly
+
+```yaml
+unity_import_fbx:
+  description: "Import FBX files from Blender export"
+  inputs:
+    - project_path: "Unity project"
+    - fbx_files: "Array of FBX file paths"
+    - import_settings: "FBX import configuration"
+  outputs:
+    - imported_assets: "FBX assets in Unity"
+
+unity_add_colliders:
+  description: "Add mesh colliders to course meshes"
+  inputs:
+    - project_path: "Unity project"
+    - meshes: "Meshes to add colliders to"
+    - collider_type: "mesh|box|convex"
+  outputs:
+    - meshes_with_colliders: "Meshes with colliders attached"
+
+unity_place_meshes:
+  description: "Position FBX meshes in the scene"
+  inputs:
+    - project_path: "Unity project"
+    - scene: "Target scene"
+    - meshes: "Meshes to place"
+    - alignment: "Terrain alignment settings"
+  outputs:
+    - placed_objects: "Game objects in scene"
+
+unity_apply_materials:
+  description: "Apply materials using SetMaterials.cs or direct assignment"
+  inputs:
+    - project_path: "Unity project"
+    - mesh_material_map:
+      - mesh: "fairway_*"
+        material: "FairwayMaterial"
+      - mesh: "rough_*"
+        material: "RoughMaterial"
+      - mesh: "bunker_*"
+        material: "BunkerMaterial"
+      # ... etc
+  outputs:
+    - materialized_meshes: "Meshes with materials applied"
+
+unity_setup_satellite_shader:
+  description: "Configure satellite imagery shader"
+  inputs:
+    - project_path: "Unity project"
+    - satellite_image: "Satellite overlay image"
+    - blend_settings: "Shader blend configuration"
+  outputs:
+    - shader_configured: "Satellite shader ready"
+
+unity_place_vegetation:
+  description: "Place trees, bushes, grass using Vegetation Studio Pro or manual"
+  inputs:
+    - project_path: "Unity project"
+    - vegetation_rules:
+      - type: "tree"
+        density: 0.3
+        areas: ["rough", "deep_rough"]
+      - type: "grass"
+        density: 0.8
+        areas: ["fairway", "rough"]
+  outputs:
+    - vegetation_placed: "Vegetation in scene"
+
+unity_setup_3d_grass:
+  description: "Configure Stixx 3D Grass shader"
+  inputs:
+    - project_path: "Unity project"
+    - grass_settings: "3D grass configuration"
+  outputs:
+    - grass_configured: "3D grass shader active"
+
+unity_setup_water_reflections:
+  description: "Configure water reflections (PIDI Water or reflection probes)"
+  inputs:
+    - project_path: "Unity project"
+    - water_meshes: "Water plane meshes"
+    - reflection_type: "pidi|probes"
+  outputs:
+    - water_configured: "Water with reflections"
+
+unity_setup_gpu_instancer:
+  description: "Configure GPU Instancer for performance"
+  inputs:
+    - project_path: "Unity project"
+    - objects_to_instance: "Vegetation and repeated objects"
+  outputs:
+    - instancing_configured: "GPU Instancer set up"
+
+unity_build_asset_bundle:
+  description: "Build course asset bundle for GSPro"
+  inputs:
+    - project_path: "Unity project"
+    - scene: "Course scene"
+    - bundle_name: "Output bundle name"
+    - platform: "Target platform"
+  outputs:
+    - asset_bundle: "Built .assetbundle file"
+```
+
+---
+
+### Phase 7: GreenKeeper Setup (Steps 23-24)
+
+| Step | Manual Process | MCP Tool |
+|------|----------------|----------|
+| 23 | Use GSP GreenKeeper to add Tees, Pins, Shotpoints, and Hazards | `greenkeeper_configure` |
+| 24 | Using Paid Assets - GPU Instancer and PIDI Water | (covered in Unity tools above) |
+
+#### MCP Tools - GreenKeeper
+
+```yaml
+greenkeeper_add_tees:
+  description: "Add tee positions for each hole"
+  inputs:
+    - course: "Course data"
+    - tees_per_hole:
+      - hole: 1
+        positions:
+          - color: "black"
+            position: [x, y, z]
+          - color: "blue"
+            position: [x, y, z]
+          # ... etc
+  outputs:
+    - tees_configured: "Tee positions saved"
+
+greenkeeper_add_pins:
+  description: "Add pin positions using slope shader guidance"
+  inputs:
+    - course: "Course data"
+    - pins_per_hole:
+      - hole: 1
+        positions:
+          - id: "A"
+            position: [x, y, z]
+          - id: "B"
+            position: [x, y, z]
+  outputs:
+    - pins_configured: "Pin positions saved"
+
+greenkeeper_add_shotpoints:
+  description: "Add shotpoint/aim point markers"
+  inputs:
+    - course: "Course data"
+    - shotpoints: "Array of shotpoint definitions"
+  outputs:
+    - shotpoints_configured: "Shotpoints saved"
+
+greenkeeper_add_hazards:
+  description: "Define hazard boundaries and types"
+  inputs:
+    - course: "Course data"
+    - hazards:
+      - type: "water"
+        boundary: "polygon points"
+      - type: "bunker"
+        boundary: "polygon points"
+      - type: "ob"
+        boundary: "polygon points"
+  outputs:
+    - hazards_configured: "Hazards saved"
+
+greenkeeper_export:
+  description: "Export GreenKeeper data for GSPro"
+  inputs:
+    - course: "Course data"
+    - format: "GSPro format"
+  outputs:
+    - greenkeeper_file: "Exported GK file"
 ```
 
 ---
 
 ## Embabel Orchestration
 
-Embabel drives the entire None to Done workflow, invoking the right MCP tools at each stage.
+Embabel coordinates the entire None to Done workflow, calling MCP tools in sequence.
 
-### Workflow Definition
+### Complete Workflow Definition
 
 ```yaml
-workflow: none_to_done
-name: "Complete Course Creation"
+workflow: opcd_none_to_done
+name: "OPCD Golf Course Creation"
 
-stages:
-  - stage: concept
-    tools:
-      - course_outline_from_topic
-      - learning_objectives_generator
-      - module_structure_builder
-    gate: outline_approved
-    
-  - stage: draft
-    tools:
-      - lesson_script_generator
-      - storyboard_creator
-      - asset_requirements_compiler
-      - interaction_designer
-    gate: content_plan_complete
-    
-  - stage: build
-    parallel:
-      - tools: [blender_create_lesson_environment, blender_generate_demonstration_model]
-        for_each: lesson
-      - tools: [generate_narration_audio]
-        for_each: script
-    then:
-      - tools: [unity_create_lesson_scene, unity_import_lesson_assets]
-        for_each: lesson
-      - tools: [unity_setup_lesson_progression, unity_add_interactive_elements]
-    gate: all_lessons_assembled
-    
-  - stage: review
-    tools:
-      - run_playthrough_test
-      - check_learning_objective_coverage
-      - validate_interactions
-      - accessibility_check
-    gate: qa_passed
-    
-  - stage: done
-    tools:
-      - build_for_platform
-      - package_scorm
-      - generate_documentation
-      - publish_release
-    gate: published
+phases:
+  - name: terrain_creation
+    steps:
+      - tool: lidar_to_heightmap
+        inputs:
+          lidar_source: "${input.lidar_url}"
+          bounds: "${input.course_bounds}"
+      - tool: unity_setup_terrain
+        inputs:
+          heightmap: "${lidar_to_heightmap.output.heightmap_raw}"
+          dimensions: "${lidar_to_heightmap.output.dimensions}"
+    gate: terrain_ready
+
+  - name: course_tracing
+    steps:
+      - tool: inkscape_create_project
+        inputs:
+          satellite_image: "${input.satellite_image}"
+          course_name: "${input.course_name}"
+      - tool: inkscape_trace_course  # Multiple calls per hole
+        for_each: hole in 1..18
+      - tool: inkscape_export_png
+    gate: svg_complete
+
+  - name: terrain_refinement
+    steps:
+      - tool: unity_apply_terrain_overlay
+      - tool: unity_adjust_terrain_contours
+      - tool: unity_export_terrain
+        inputs:
+          resolution: "half"
+    gate: terrain_exported
+
+  - name: svg_conversion
+    steps:
+      - tool: svg_convert
+    gate: svg_converted
+
+  - name: blender_processing
+    steps:
+      - tool: blender_open_opcd_template
+      - tool: blender_import_svg
+      - tool: blender_import_terrain
+      - tool: blender_convert_and_cut
+      - tool: blender_convert_meshes
+      - tool: blender_add_curbs
+        if: has_cart_paths
+      - tool: blender_add_bulkhead
+        if: has_water
+      - tool: blender_add_water_plane
+        if: has_water
+      - tool: blender_export_fbx
+    gate: fbx_exported
+
+  - name: unity_assembly
+    steps:
+      - tool: unity_import_fbx
+      - tool: unity_add_colliders
+      - tool: unity_place_meshes
+      - tool: unity_apply_materials
+      - tool: unity_place_vegetation
+      - tool: unity_setup_water_reflections
+        if: has_water
+      - tool: unity_setup_gpu_instancer
+      - tool: unity_build_asset_bundle
+    gate: bundle_built
+
+  - name: greenkeeper_setup
+    steps:
+      - tool: greenkeeper_add_tees
+      - tool: greenkeeper_add_pins
+      - tool: greenkeeper_add_shotpoints
+      - tool: greenkeeper_add_hazards
+      - tool: greenkeeper_export
+    gate: course_complete
+
+output:
+  asset_bundle: "${unity_build_asset_bundle.output.asset_bundle}"
+  greenkeeper_data: "${greenkeeper_export.output.greenkeeper_file}"
+  status: "DONE"
 ```
 
-### Embabel Commands
+---
+
+## MCP Server Architecture
 
 ```
-User: "Create a course on Introduction to 3D Modeling"
-
-Embabel:
-1. Invokes course_outline_from_topic("Introduction to 3D Modeling")
-2. Generates learning objectives for each module
-3. Creates detailed lesson plans
-4. For each lesson:
-   - Generates storyboard
-   - Creates assets in Blender
-   - Assembles in Unity
-5. Runs full test suite
-6. Builds and publishes
-
-Result: Complete, published course
+┌─────────────────────────────────────────────────────────────┐
+│                    Embabel Orchestrator                      │
+│              (Drives None to Done Workflow)                  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  LIDAR/GIS  │    │  Inkscape   │    │   Blender   │
+│ MCP Server  │    │ MCP Server  │    │ MCP Server  │
+└─────────────┘    └─────────────┘    └─────────────┘
+       │                   │                   │
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│    Unity    │    │ SVG Convert │    │ GreenKeeper │
+│ MCP Server  │    │ MCP Server  │    │ MCP Server  │
+└─────────────┘    └─────────────┘    └─────────────┘
 ```
+
+### MCP Server Responsibilities
+
+| Server | Application | Key Functions |
+|--------|-------------|---------------|
+| `lidar-mcp` | LIDAR Processing | Heightmap generation from GIS data |
+| `inkscape-mcp` | Inkscape | SVG creation, shape drawing, export |
+| `svg-convert-mcp` | GSProSVGConvert | SVG preparation for Blender |
+| `blender-mcp` | Blender 2.83 LTS | Mesh conversion, terrain projection, FBX export |
+| `unity-mcp` | Unity | Terrain, materials, vegetation, asset bundles |
+| `greenkeeper-mcp` | GSP GreenKeeper | Tees, pins, hazards, course data |
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1: Core Workflow Tools
+### Phase 1: Core Pipeline Tools
 
-- [ ] `course_outline_from_topic` - Concept stage entry point
-- [ ] `lesson_script_generator` - Draft stage core tool
-- [ ] `asset_requirements_compiler` - Draft to Build bridge
+- [ ] `inkscape-mcp` - SVG creation and export
+- [ ] `blender-mcp` - Core mesh operations (import, cut, convert, export)
+- [ ] `unity-mcp` - Terrain and FBX import
 
-### Phase 2: Blender MCP (Build Stage)
+### Phase 2: Automation Enhancement
 
-- [ ] `create_lesson_environment` - Scene creation
-- [ ] `generate_demonstration_model` - Asset creation
-- [ ] `export_for_unity` - Build pipeline
+- [ ] `svg-convert-mcp` - GSProSVGConvert wrapper
+- [ ] `blender-mcp` - Peripherals (curbs, bulkheads, water planes)
+- [ ] `unity-mcp` - Materials and colliders
 
-### Phase 3: Unity MCP (Build Stage)
+### Phase 3: Advanced Features
 
-- [ ] `create_lesson_scene` - Scene assembly
-- [ ] `import_lesson_assets` - Asset integration
-- [ ] `setup_lesson_progression` - Flow configuration
-- [ ] `add_interactive_elements` - Interaction layer
+- [ ] `lidar-mcp` - Heightmap generation
+- [ ] `unity-mcp` - Vegetation, shaders, GPU Instancer
+- [ ] `greenkeeper-mcp` - Full GreenKeeper automation
 
-### Phase 4: Review & Publish Tools
+### Phase 4: Embabel Integration
 
-- [ ] `run_playthrough_test` - Automated QA
-- [ ] `validate_interactions` - Interaction testing
-- [ ] `build_for_platform` - Build generation
-- [ ] `publish_release` - Final deployment
-
-### Phase 5: Embabel Integration
-
-- [ ] Workflow orchestration engine
-- [ ] Stage gate management
-- [ ] Progress tracking
-- [ ] Error recovery
+- [ ] Workflow orchestration
+- [ ] Progress tracking and checkpoints
+- [ ] Error recovery and retry logic
+- [ ] User prompts for manual steps
 
 ---
 
-## Summary
+## Special Considerations
 
-The MCP tools in this system are **not** general-purpose automation utilities. Each tool exists to:
+### Hole 98 and Hole 99 Concepts
 
-1. **Move content forward** through the None to Done pipeline
-2. **Bridge specific stages** in the workflow
-3. **Eliminate manual bottlenecks** that slow course creation
-4. **Maintain quality** while enabling speed
+- **Hole 99**: Outer mesh that spans multiple holes (deep rough around course)
+- **Hole 98**: Features that cut through other objects (cart paths)
 
-By keeping this focus, we ensure that every tool we build directly contributes to the goal: **taking a course from nothing to published**.
+These require special handling in both Inkscape and Blender MCP tools.
+
+### Donut Fix Workflow
+
+Cart paths that loop create "donuts" that must be fixed in Blender:
+
+```yaml
+blender_fix_donut:
+  trigger: cart_path_has_loop
+  steps:
+    - hide_hole99_mesh
+    - select_cart_path
+    - enter_edit_mode
+    - remove_corrupt_face
+    - exit_edit_mode
+    - unhide_hole99_mesh
+```
+
+### Paid Asset Integration
+
+Tools should support optional paid assets:
+- **GPU Instancer** - Performance optimization
+- **PIDI Water** - Water reflections
+- **Vegetation Studio Pro** - Advanced vegetation
+- **Stixx 3D Grass** - Grass rendering
 
 ---
 
 ## References
 
-- **OPCD Wiki**: [Open Project Community Designers Wiki](https://open-project-community-designers.github.io/OPCD-Wiki/)
-- **MCP Specification**: Model Context Protocol documentation
-- **Embabel**: AI-driven workflow orchestration framework
+- [OPCD Documentation](https://docs.google.com/document/d/1InsfFuOrAH4l2S6RnTy17_O8FPXwt_EA_jKLvW4Ky80)
+- [None to Done Video Series](https://docs.google.com/document/d/1bwNRByfPQNbUOWfKymXvdoWq9QP9-1R0U1GaJf5z9fU)
+- [OPCD Discord](https://discord.gg/4ZhJzwx)
+- [Zeros and Ones GCD Tutorials](https://zerosandonesgcd.com/)
