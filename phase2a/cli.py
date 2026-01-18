@@ -8,7 +8,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import click
 import numpy as np
@@ -19,6 +19,9 @@ from rich.table import Table
 
 from .client import Phase2AClient
 from .config import Phase2AConfig
+
+if TYPE_CHECKING:
+    from .pipeline.interactive import InteractiveSelector, FeatureType
 
 console = Console()
 
@@ -68,6 +71,12 @@ def cli():
     help="SAM model checkpoint path",
 )
 @click.option(
+    "--device",
+    type=click.Choice(["cuda", "cpu"]),
+    default="cuda",
+    help="Device to run SAM on (cuda or cpu)",
+)
+@click.option(
     "--high-threshold",
     type=float,
     default=0.85,
@@ -95,6 +104,7 @@ def run(
     green_centers: Optional[Path],
     config: Optional[Path],
     checkpoint: Optional[Path],
+    device: str,
     high_threshold: float,
     low_threshold: float,
     verbose: bool,
@@ -128,6 +138,7 @@ def run(
     if checkpoint:
         cfg.sam.checkpoint_path = str(checkpoint)
     
+    cfg.sam.device = device
     cfg.thresholds.high = high_threshold
     cfg.thresholds.low = low_threshold
     
@@ -694,9 +705,9 @@ def _interactive_text_mode(console, selector):
 
 def _prompt_feature_selection(
     console,
-    selector: InteractiveSelector,
+    selector: "InteractiveSelector",
     hole: int,
-    feature_type: FeatureType,
+    feature_type: "FeatureType",
     prompt_text: str,
 ):
     """Helper to prompt for feature selection."""
