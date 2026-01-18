@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import numpy as np
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -443,6 +444,305 @@ def info():
     console.print("  phase2a generate-masks image.png --checkpoint sam.pth")
     console.print("  phase2a export-png course.svg -o overlay.png")
     console.print("  phase2a validate ./output")
+
+
+@cli.command()
+@click.argument("image", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-o", "--output",
+    type=click.Path(path_type=Path),
+    default=Path("phase2a_output"),
+    help="Output directory",
+)
+@click.option(
+    "--checkpoint",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="SAM model checkpoint path",
+)
+@click.option(
+    "--selections",
+    type=click.Path(path_type=Path),
+    help="Load existing selections JSON file",
+)
+@click.option(
+    "--model-type",
+    type=click.Choice(["vit_h", "vit_l", "vit_b"]),
+    default="vit_h",
+    help="SAM model variant",
+)
+@click.option(
+    "-v", "--verbose",
+    is_flag=True,
+    help="Enable verbose output",
+)
+def select(
+    image: Path,
+    output: Path,
+    checkpoint: Path,
+    selections: Optional[Path],
+    model_type: str,
+    verbose: bool,
+):
+    """
+    Interactive hole-by-hole feature selection workflow.
+    
+    Workflow:
+    1. Prepare: Generate all candidate masks
+    2. For each hole (1-18):
+       a. Prompt: "Click on the green for hole N"
+       b. User selects masks
+       c. Prompt: "Click on the tee for hole N"
+       d. User selects masks
+       e. Prompt: "Click on fairway items for hole N"
+       f. User selects masks
+       g. Prompt: "Click on bunkers for hole N"
+       h. User selects masks
+    
+    IMAGE: Path to satellite image (PNG/JPG)
+    """
+    setup_logging(verbose)
+    
+    from PIL import Image
+    from .pipeline.masks import MaskGenerator
+    from .pipeline.interactive import InteractiveSelector, FeatureType
+    
+    console.print("\n[bold blue]Interactive Feature Selection[/bold blue]")
+    console.print(f"Input:  {image}")
+    console.print(f"Output: {output}\n")
+    
+    try:
+        # Load image
+        image_array = np.array(Image.open(image).convert("RGB"))
+        
+        # Step 1: Prepare - Generate all masks
+        console.print("[cyan]Step 1: Preparing masks...[/cyan]")
+        generator = MaskGenerator(
+            model_type=model_type,
+            checkpoint_path=str(checkpoint),
+        )
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Generating candidate masks...", total=None)
+            masks = generator.generate(image_array)
+            progress.update(task, description="[green]Complete!")
+        
+        console.print(f"[green]✓ Generated {len(masks)} candidate masks[/green]\n")
+        
+        # Save masks
+        masks_dir = output / "masks"
+        generator.save_masks(masks, masks_dir)
+        
+        # Initialize selector
+        selector = InteractiveSelector(masks, image_array)
+        
+        # Load existing selections if provided
+        if selections and selections.exists():
+            console.print(f"[cyan]Loading existing selections from {selections}[/cyan]")
+            loaded_selections = InteractiveSelector.load_selections(selections)
+            selector.selections = loaded_selections
+            console.print(f"[green]✓ Loaded selections for {len(loaded_selections)} holes[/green]\n")
+        
+        # Interactive selection workflow with matplotlib
+        try:
+            from .pipeline.visualize import InteractiveMaskSelector
+        except ImportError:
+            console.print("[yellow]matplotlib not available, falling back to text input[/yellow]")
+            _interactive_text_mode(console, selector)
+        else:
+            _interactive_click_mode(console, selector)
+        
+        # Save selections
+        selections_path = output / "metadata" / "interactive_selections.json"
+        selector.save_selections(selections_path)
+        console.print(f"\n[green]✓ Saved selections to {selections_path}[/green]")
+        
+        console.print("\n[bold green]Selection complete![/bold green]")
+        console.print(f"[dim]Next: Use these selections with the pipeline[/dim]")
+        
+    except Exception as e:
+        console.print(f"\n[red]Error: {e}[/red]")
+        if verbose:
+            console.print_exception()
+        sys.exit(1)
+
+
+def _interactive_click_mode(console, selector):
+    """Interactive selection using matplotlib clicking with buttons/keyboard."""
+    from .pipeline.visualize import InteractiveMaskSelector
+    from .pipeline.interactive import FeatureType
+    
+    console.print("[cyan]Interactive Click Mode[/cyan]")
+    console.print("[dim]Click on masks in the image window to select them.[/dim]")
+    console.print("[dim]Press Enter/Space or click 'Done' button when finished with each feature.[/dim]\n")
+    
+    holes_to_process = list(range(1, 19))  # Holes 1-18
+    
+    for hole in holes_to_process:
+        console.print(f"\n[bold yellow]Hole {hole}[/bold yellow]")
+        
+        feature_types = [
+            (FeatureType.GREEN, "green(s)"),
+            (FeatureType.TEE, "tee(s)"),
+            (FeatureType.FAIRWAY, "fairway items"),
+            (FeatureType.BUNKER, "bunker(s)"),
+        ]
+        
+        for feature_type, feature_name in feature_types:
+            console.print(f"\n[cyan]Select {feature_name} for hole {hole}[/cyan]")
+            console.print("[dim]Window will open - click masks to select, press Enter/Space or click 'Done' when finished[/dim]")
+            
+            # Create interactive selector
+            interactive = InteractiveMaskSelector(
+                selector,
+                title=f"Hole {hole} - Select {feature_name} (Click masks, then Enter/Space/Done)",
+            )
+            
+            # Show current selections for this feature type
+            hole_selection = selector.get_selection_for_hole(hole)
+            if hole_selection:
+                if feature_type == FeatureType.GREEN:
+                    existing = hole_selection.greens
+                elif feature_type == FeatureType.TEE:
+                    existing = hole_selection.tees
+                elif feature_type == FeatureType.FAIRWAY:
+                    existing = hole_selection.fairways
+                elif feature_type == FeatureType.BUNKER:
+                    existing = hole_selection.bunkers
+                else:
+                    existing = []
+                interactive.selected_mask_ids = existing.copy()
+            
+            # Show interactive window (blocks until Done is pressed)
+            interactive.show(block=True)
+            
+            # Get selected masks
+            selected_ids = interactive.get_selected_mask_ids()
+            
+            if selected_ids:
+                selector.select_for_hole(hole, feature_type, selected_ids)
+                console.print(f"[green]✓ Selected {len(selected_ids)} {feature_name}[/green]")
+            else:
+                console.print(f"[dim]No {feature_name} selected[/dim]")
+        
+        # Optional: water and rough
+        console.print(f"\n[dim]Add water/rough for hole {hole}? (y/N):[/dim]")
+        if click.prompt("", default="n", show_default=False).lower() == 'y':
+            for feature_type, feature_name in [
+                (FeatureType.WATER, "water"),
+                (FeatureType.ROUGH, "rough"),
+            ]:
+                console.print(f"\n[cyan]Select {feature_name} for hole {hole}[/cyan]")
+                interactive = InteractiveMaskSelector(
+                    selector,
+                    title=f"Hole {hole} - Select {feature_name} (Enter/Space/Done when done)",
+                )
+                interactive.show(block=True)
+                selected_ids = interactive.get_selected_mask_ids()
+                if selected_ids:
+                    selector.select_for_hole(hole, feature_type, selected_ids)
+                    console.print(f"[green]✓ Selected {len(selected_ids)} {feature_name}[/green]")
+
+
+def _interactive_text_mode(console, selector):
+    """Fallback text-based selection mode."""
+    from .pipeline.interactive import FeatureType
+    
+    console.print("[cyan]Interactive Selection Mode (Text Input)[/cyan]")
+    console.print("[dim]For each hole, you'll be prompted to select features.[/dim]")
+    console.print("[dim]You can type mask IDs or use coordinates (format: x,y)[/dim]\n")
+    
+    holes_to_process = list(range(1, 19))  # Holes 1-18
+    
+    for hole in holes_to_process:
+        console.print(f"\n[bold yellow]Hole {hole}[/bold yellow]")
+        
+        # Green selection
+        _prompt_feature_selection(
+            console, selector, hole, FeatureType.GREEN, "green(s)"
+        )
+        
+        # Tee selection
+        _prompt_feature_selection(
+            console, selector, hole, FeatureType.TEE, "tee(s)"
+        )
+        
+        # Fairway selection
+        _prompt_feature_selection(
+            console, selector, hole, FeatureType.FAIRWAY, "fairway items"
+        )
+        
+        # Bunker selection
+        _prompt_feature_selection(
+            console, selector, hole, FeatureType.BUNKER, "bunker(s)"
+        )
+        
+        # Optional: water and rough
+        console.print(f"\n[dim]Press Enter to skip water/rough for hole {hole}, or type 'y' to add:[/dim]")
+        if click.prompt("", default="", show_default=False).lower() == 'y':
+            _prompt_feature_selection(
+                console, selector, hole, FeatureType.WATER, "water"
+            )
+            _prompt_feature_selection(
+                console, selector, hole, FeatureType.ROUGH, "rough"
+            )
+
+
+def _prompt_feature_selection(
+    console,
+    selector: InteractiveSelector,
+    hole: int,
+    feature_type: FeatureType,
+    prompt_text: str,
+):
+    """Helper to prompt for feature selection."""
+    console.print(f"[cyan]Select {prompt_text} for hole {hole}:[/cyan]")
+    console.print("[dim]Enter mask IDs (comma-separated) or coordinates (x,y format)[/dim]")
+    console.print("[dim]Press Enter to skip[/dim]")
+    
+    response = click.prompt("", default="", show_default=False).strip()
+    
+    if not response:
+        return
+    
+    # Parse input - could be mask IDs or coordinates
+    mask_ids = []
+    
+    for item in response.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        
+        # Check if it's coordinates (x,y format)
+        if ',' in item:
+            try:
+                parts = item.split(',')
+                if len(parts) == 2:
+                    x, y = int(parts[0].strip()), int(parts[1].strip())
+                    mask_id = selector.get_mask_at_point(x, y)
+                    if mask_id:
+                        mask_ids.append(mask_id)
+                    else:
+                        console.print(f"[yellow]No mask found at ({x}, {y})[/yellow]")
+            except ValueError:
+                console.print(f"[yellow]Invalid coordinate format: {item}[/yellow]")
+        else:
+            # Assume it's a mask ID
+            mask_id = f"mask_{int(item):04d}" if item.isdigit() else item
+            if mask_id in selector.masks:
+                mask_ids.append(mask_id)
+            else:
+                console.print(f"[yellow]Mask ID not found: {mask_id}[/yellow]")
+    
+    if mask_ids:
+        selector.select_for_hole(hole, feature_type, mask_ids)
+        console.print(f"[green]✓ Selected {len(mask_ids)} mask(s)[/green]")
+    else:
+        console.print("[dim]No masks selected[/dim]")
 
 
 def main():

@@ -54,6 +54,7 @@ class PipelineStage(str, Enum):
 class PipelineState:
     """Current state of the pipeline execution."""
     image: Optional[np.ndarray] = None
+    images: List[np.ndarray] = field(default_factory=list)  # Multiple images for feature extraction
     masks: List[MaskData] = field(default_factory=list)
     features: List[MaskFeatures] = field(default_factory=list)
     classifications: List[Classification] = field(default_factory=list)
@@ -134,18 +135,50 @@ class Phase2AClient:
         return self.config.output_dir
     
     def _load_image(self) -> np.ndarray:
-        """Load the input satellite image."""
+        """Load the primary input satellite image (for mask generation)."""
         if self.state.image is not None:
             return self.state.image
         
-        if self.config.input_image is None:
+        # Use first image from input_images if available, otherwise input_image
+        image_path = None
+        if self.config.input_images:
+            image_path = self.config.input_images[0]
+        elif self.config.input_image:
+            image_path = self.config.input_image
+        else:
             raise ValueError("No input image specified")
         
-        logger.info(f"Loading image from {self.config.input_image}")
+        logger.info(f"Loading primary image from {image_path}")
         self.state.image = np.array(
-            Image.open(self.config.input_image).convert("RGB")
+            Image.open(image_path).convert("RGB")
         )
         return self.state.image
+    
+    def _load_images(self) -> List[np.ndarray]:
+        """Load all input satellite images (for multi-image feature extraction)."""
+        if self.state.images:
+            return self.state.images
+        
+        # Determine which images to load
+        image_paths = []
+        if self.config.input_images:
+            image_paths = self.config.input_images
+        elif self.config.input_image:
+            image_paths = [self.config.input_image]
+        else:
+            raise ValueError("No input images specified")
+        
+        logger.info(f"Loading {len(image_paths)} image(s) for feature extraction")
+        self.state.images = [
+            np.array(Image.open(path).convert("RGB"))
+            for path in image_paths
+        ]
+        
+        # Also set primary image if not set
+        if self.state.image is None:
+            self.state.image = self.state.images[0]
+        
+        return self.state.images
     
     def _load_green_centers(self) -> Optional[List[Dict]]:
         """Load green centers if available."""
@@ -216,10 +249,18 @@ class Phase2AClient:
                 green_centers=green_centers,
             )
         
-        image = self._load_image()
-        self.state.features = self._feature_extractor.extract_all(
-            self.state.masks, image
-        )
+        # Use multi-image extraction if multiple images available
+        images = self._load_images()
+        if len(images) > 1:
+            logger.info(f"Using multi-image feature extraction from {len(images)} images")
+            self.state.features = self._feature_extractor.extract_all_multi_image(
+                self.state.masks, images
+            )
+        else:
+            image = images[0]
+            self.state.features = self._feature_extractor.extract_all(
+                self.state.masks, image
+            )
         
         # Save if configured
         if self.config.export_intermediates:

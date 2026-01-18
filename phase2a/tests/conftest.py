@@ -174,3 +174,45 @@ def mock_polygons(mock_mask_data, mock_gated_masks):
     accepted, _, _ = mock_gated_masks
     generator = PolygonGenerator(min_area=10)
     return generator.generate_all(mock_mask_data, accepted)
+
+
+@pytest.fixture
+def pictatinny_b_image() -> Path:
+    """Load Pictatinny_B.jpg resource image."""
+    image_path = Path(__file__).parent.parent / "resources" / "Pictatinny_B.jpg"
+    if not image_path.exists():
+        pytest.skip(f"Resource image not found: {image_path}")
+    return image_path
+
+
+@pytest.fixture
+def pictatinny_g_image() -> Path:
+    """Load Pictatinny_G.jpg resource image."""
+    image_path = Path(__file__).parent.parent / "resources" / "Pictatinny_G.jpg"
+    if not image_path.exists():
+        pytest.skip(f"Resource image not found: {image_path}")
+    return image_path
+
+
+@pytest.fixture
+def pictatinny_images(pictatinny_b_image, pictatinny_g_image) -> List[Path]:
+    """Load both Pictatinny resource images (same topography)."""
+    return [pictatinny_b_image, pictatinny_g_image]
+
+
+@pytest.fixture
+def pictatinny_b_array(pictatinny_b_image) -> np.ndarray:
+    """Load Pictatinny_B.jpg as numpy array."""
+    return np.array(Image.open(pictatinny_b_image).convert("RGB"))
+
+
+@pytest.fixture
+def pictatinny_g_array(pictatinny_g_image) -> np.ndarray:
+    """Load Pictatinny_G.jpg as numpy array."""
+    return np.array(Image.open(pictatinny_g_image).convert("RGB"))
+
+
+@pytest.fixture
+def pictatinny_arrays(pictatinny_b_array, pictatinny_g_array) -> List[np.ndarray]:
+    """Load both Pictatinny images as numpy arrays."""
+    return [pictatinny_b_array, pictatinny_g_array]

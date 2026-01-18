@@ -4,7 +4,7 @@ Configuration for Phase 2A pipeline.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import json
 import yaml
 
@@ -59,6 +59,7 @@ class Phase2AConfig:
     
     # Input/output paths
     input_image: Optional[Path] = None
+    input_images: Optional[List[Path]] = None  # Multiple images of same topography for better accuracy
     green_centers_file: Optional[Path] = None
     output_dir: Path = field(default_factory=lambda: Path("phase2a_output"))
     
@@ -77,6 +78,8 @@ class Phase2AConfig:
         """Ensure paths are Path objects."""
         if self.input_image is not None:
             self.input_image = Path(self.input_image)
+        if self.input_images is not None:
+            self.input_images = [Path(img) for img in self.input_images]
         if self.green_centers_file is not None:
             self.green_centers_file = Path(self.green_centers_file)
         self.output_dir = Path(self.output_dir)
@@ -113,6 +116,7 @@ class Phase2AConfig:
         """Export configuration to dictionary."""
         return {
             "input_image": str(self.input_image) if self.input_image else None,
+            "input_images": [str(img) for img in self.input_images] if self.input_images else None,
             "green_centers_file": str(self.green_centers_file) if self.green_centers_file else None,
             "output_dir": str(self.output_dir),
             "thresholds": {

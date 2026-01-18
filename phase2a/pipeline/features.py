@@ -311,6 +311,104 @@ class FeatureExtractor:
         logger.info(f"Extracted features for {len(features_list)} masks")
         return features_list
     
+    def extract_all_multi_image(
+        self,
+        masks: List[Any],  # List of MaskData
+        images: List[np.ndarray],
+    ) -> List[MaskFeatures]:
+        """
+        Extract features from all masks using multiple images of same topography.
+        
+        Features are extracted from each image separately, then merged/averaged
+        to improve accuracy. Color and texture features are averaged, while
+        shape features are taken from the first image (as shape should be consistent).
+        
+        Args:
+            masks: List of MaskData objects
+            images: List of source images (H, W, 3) in RGB format
+            
+        Returns:
+            List of MaskFeatures objects with averaged features
+        """
+        if not images:
+            raise ValueError("At least one image must be provided")
+        
+        if len(images) == 1:
+            return self.extract_all(masks, images[0])
+        
+        logger.info(f"Extracting features from {len(images)} images for better accuracy")
+        
+        # Extract features from each image
+        all_features = []
+        for i, image in enumerate(images):
+            features_list = self.extract_all(masks, image)
+            all_features.append(features_list)
+        
+        # Merge features by averaging color/texture, keeping shape from first
+        merged_features = []
+        for mask_idx in range(len(masks)):
+            mask_id = masks[mask_idx].id
+            
+            # Get features for this mask from all images
+            features_per_image = [features[mask_idx] for features in all_features]
+            
+            # Merge features
+            merged = self._merge_features(mask_id, features_per_image)
+            merged_features.append(merged)
+        
+        logger.info(f"Merged features from {len(images)} images for {len(merged_features)} masks")
+        return merged_features
+    
+    @staticmethod
+    def _merge_features(mask_id: str, features_list: List[MaskFeatures]) -> MaskFeatures:
+        """
+        Merge features from multiple images by averaging compatible features.
+        
+        Args:
+            mask_id: Identifier for the mask
+            features_list: List of MaskFeatures from different images
+            
+        Returns:
+            Merged MaskFeatures object
+        """
+        if not features_list:
+            raise ValueError("At least one feature set must be provided")
+        
+        if len(features_list) == 1:
+            return features_list[0]
+        
+        # Use first feature as base
+        merged = MaskFeatures(mask_id=mask_id)
+        
+        # Average color features (can vary with lighting/conditions)
+        hsv_means = np.array([f.hsv_mean for f in features_list])
+        hsv_stds = np.array([f.hsv_std for f in features_list])
+        merged.hsv_mean = tuple(np.mean(hsv_means, axis=0).tolist())
+        merged.hsv_std = tuple(np.mean(hsv_stds, axis=0).tolist())
+        
+        lab_means = np.array([f.lab_mean for f in features_list])
+        lab_stds = np.array([f.lab_std for f in features_list])
+        merged.lab_mean = tuple(np.mean(lab_means, axis=0).tolist())
+        merged.lab_std = tuple(np.mean(lab_stds, axis=0).tolist())
+        
+        # Average texture features
+        merged.grayscale_variance = np.mean([f.grayscale_variance for f in features_list])
+        
+        # Use shape features from first image (shape should be consistent)
+        # Alternatively, we could average these too if masks are aligned
+        merged.area = features_list[0].area
+        merged.perimeter = features_list[0].perimeter
+        merged.compactness = features_list[0].compactness
+        merged.elongation = features_list[0].elongation
+        
+        # Use context features from first image (relationships should be similar)
+        merged.neighbor_distances = features_list[0].neighbor_distances
+        merged.water_overlap_ratio = features_list[0].water_overlap_ratio
+        merged.green_center_distance = features_list[0].green_center_distance
+        merged.nearest_hole = features_list[0].nearest_hole
+        
+        return merged
+    
     def save_features(
         self,
         features_list: List[MaskFeatures],

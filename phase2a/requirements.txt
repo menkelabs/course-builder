@@ -8,7 +8,7 @@ Pillow>=10.0.0
 scikit-image>=0.21.0
 
 # SAM (Segment Anything Model)
-segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
+git+https://github.com/facebookresearch/segment-anything.git#egg=segment-anything
 torch>=2.0.0
 torchvision>=0.15.0
 
@@ -27,6 +27,13 @@ click>=8.1.0
 rich>=13.0.0
 pydantic>=2.0.0
 pyyaml>=6.0.0
+
+# GUI support (optional, for interactive selection)
+matplotlib>=3.7.0
+# Choose one GUI backend:
+# PyQt5>=5.15.0  # For Qt5Agg backend (recommended)
+# OR
+# tk  # Usually included with Python (for TkAgg backend)
 
 # Optional: for development
 # pytest>=7.0.0
