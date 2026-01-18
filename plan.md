@@ -2,544 +2,483 @@
 
 ## Overview
 
-This document outlines a comprehensive automation strategy using **Embabel** as the orchestration layer, with **MCP (Model Context Protocol) tools** to automate creative workflows in Unity, Blender, and other tools. The goal is to streamline course content creation, asset generation, and deployment processes.
+This document outlines an automation strategy using **Embabel** as the orchestration layer, with **MCP (Model Context Protocol) tools** designed specifically to facilitate the **"None to Done"** workflow. Every tool exists to move a course project from concept to completion.
 
 ---
 
 ## Table of Contents
 
-1. [What is Embabel?](#what-is-embabel)
-2. [MCP Tools Architecture](#mcp-tools-architecture)
-3. [Unity Automation](#unity-automation)
-4. [Blender Automation](#blender-automation)
-5. [Additional Tool Integrations](#additional-tool-integrations)
-6. [Workflow Automation Scenarios](#workflow-automation-scenarios)
-7. [Implementation Roadmap](#implementation-roadmap)
-8. [Technical Considerations](#technical-considerations)
+1. [The None to Done Philosophy](#the-none-to-done-philosophy)
+2. [Workflow Stages](#workflow-stages)
+3. [MCP Tools by Workflow Stage](#mcp-tools-by-workflow-stage)
+4. [Tool Implementations](#tool-implementations)
+5. [Embabel Orchestration](#embabel-orchestration)
+6. [Implementation Roadmap](#implementation-roadmap)
 
 ---
 
-## What is Embabel?
+## The None to Done Philosophy
 
-Embabel is an AI-driven automation framework that can orchestrate complex workflows across multiple tools and services. By leveraging Embabel, we can:
+### Core Principle
 
-- **Coordinate multi-step processes** across different applications
-- **Automate repetitive tasks** in content creation pipelines
-- **Enable natural language interfaces** for complex tool operations
-- **Integrate AI decision-making** into creative workflows
+**Every MCP tool exists solely to facilitate moving from "None" (no content) to "Done" (published course).**
 
----
+Tools are not general-purpose utilities—they are purpose-built to support specific stages of the course creation workflow. If a tool doesn't directly contribute to completing a course, it doesn't belong in the system.
 
-## MCP Tools Architecture
-
-### What are MCP Tools?
-
-MCP (Model Context Protocol) tools provide a standardized way for AI models to interact with external systems. Key benefits include:
-
-- **Standardized Interface**: Consistent API patterns across different tools
-- **Bi-directional Communication**: Tools can both send and receive data
-- **Resource Access**: Read files, databases, and application state
-- **Action Execution**: Perform operations in connected applications
-
-### Proposed MCP Server Architecture
+### The Complete Journey
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Embabel Orchestrator                 │
-│                   (AI-Driven Automation)                 │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-          ┌───────────────┼───────────────┐
-          │               │               │
-          ▼               ▼               ▼
-┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
-│  Unity MCP      │ │ Blender MCP │ │  Other Tools    │
-│  Server         │ │ Server      │ │  MCP Servers    │
-└────────┬────────┘ └──────┬──────┘ └────────┬────────┘
-         │                 │                  │
-         ▼                 ▼                  ▼
-┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
-│  Unity Editor   │ │   Blender   │ │ Photoshop/GIMP  │
-│  & Runtime      │ │   3D Suite  │ │ Premiere/DaVinci│
-└─────────────────┘ └─────────────┘ │ Audio Tools     │
-                                    └─────────────────┘
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│  NONE   │───▶│ CONCEPT │───▶│  DRAFT  │───▶│  BUILD  │───▶│ REVIEW  │───▶│  DONE   │
+│         │    │         │    │         │    │         │    │         │    │         │
+│ Empty   │    │ Ideas & │    │ Scripts │    │ Assets  │    │ Testing │    │Published│
+│ Project │    │ Outline │    │ & Plans │    │ & Scenes│    │ & Polish│    │ Course  │
+└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
 ```
 
 ---
 
-## Unity Automation
+## Workflow Stages
 
-### MCP Server for Unity (`unity-mcp-server`)
+### Stage 1: NONE → CONCEPT
 
-#### Core Capabilities
+**Goal**: Transform an idea into a structured course outline
 
-| Tool Name | Description | Use Case |
-|-----------|-------------|----------|
-| `unity_create_project` | Initialize new Unity project | Course module setup |
-| `unity_import_asset` | Import assets (FBX, textures, audio) | Automated asset pipeline |
-| `unity_create_scene` | Create and configure scenes | Lesson environment setup |
-| `unity_add_component` | Add components to GameObjects | Interactive element setup |
-| `unity_build_project` | Build for target platform | Course deployment |
-| `unity_run_tests` | Execute unit/play mode tests | Quality assurance |
+| Input | Output |
+|-------|--------|
+| Course topic/idea | Structured outline with modules, lessons, learning objectives |
 
-#### Scene Management Tools
+### Stage 2: CONCEPT → DRAFT
 
-```typescript
-// Example MCP Tool Definition
+**Goal**: Expand outline into detailed content plans
+
+| Input | Output |
+|-------|--------|
+| Course outline | Scripts, storyboards, asset requirements, interaction designs |
+
+### Stage 3: DRAFT → BUILD
+
+**Goal**: Create all assets and assemble the course
+
+| Input | Output |
+|-------|--------|
+| Content plans | 3D models, scenes, animations, audio, interactive elements |
+
+### Stage 4: BUILD → REVIEW
+
+**Goal**: Test and refine the course
+
+| Input | Output |
+|-------|--------|
+| Assembled course | Tested, polished, QA-passed course |
+
+### Stage 5: REVIEW → DONE
+
+**Goal**: Package and publish the final course
+
+| Input | Output |
+|-------|--------|
+| Reviewed course | Published, deployed, documented course |
+
+---
+
+## MCP Tools by Workflow Stage
+
+### Stage 1 Tools: NONE → CONCEPT
+
+These tools help transform raw ideas into structured course plans.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `course_outline_from_topic` | Generate initial course structure from a topic description |
+| `learning_objectives_generator` | Create measurable learning objectives for each module |
+| `module_structure_builder` | Break course into logical modules and lessons |
+| `prerequisite_analyzer` | Identify and document required prior knowledge |
+| `scope_estimator` | Estimate content volume and complexity |
+
+```yaml
+# Example: Starting from nothing
+input:
+  topic: "Introduction to 3D Modeling for Game Development"
+  target_audience: "Beginners"
+  duration: "8 hours"
+
+output:
+  course_outline:
+    modules: 6
+    lessons: 24
+    learning_objectives: 48
+    asset_requirements: preliminary_list
+```
+
+### Stage 2 Tools: CONCEPT → DRAFT
+
+These tools expand the outline into actionable content plans.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `lesson_script_generator` | Create detailed scripts for each lesson |
+| `storyboard_creator` | Generate visual storyboards for scenes |
+| `asset_requirements_compiler` | List all 3D models, textures, audio needed |
+| `interaction_designer` | Define interactive elements and user flows |
+| `quiz_question_generator` | Create assessment questions from objectives |
+
+```yaml
+# Example: Expanding a lesson
+input:
+  lesson: "Understanding Mesh Topology"
+  learning_objectives:
+    - "Identify vertices, edges, and faces"
+    - "Explain why topology matters for animation"
+
+output:
+  script: detailed_narration_script
+  storyboard: 12_scene_visual_plan
+  assets_needed:
+    - 3d_models: ["cube_topology_demo", "character_topology_comparison"]
+    - textures: ["wireframe_overlay"]
+    - audio: ["narration_track"]
+  interactions:
+    - type: "click_to_highlight"
+      targets: ["vertices", "edges", "faces"]
+```
+
+### Stage 3 Tools: BUILD (Blender MCP)
+
+These tools create the actual 3D content in Blender.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `create_lesson_environment` | Build the 3D scene for a specific lesson |
+| `generate_demonstration_model` | Create models that demonstrate concepts |
+| `setup_camera_sequence` | Configure camera positions for lesson flow |
+| `apply_educational_materials` | Add materials optimized for clarity |
+| `export_for_unity` | Export assets in Unity-ready format |
+
+```yaml
+# Example: Building lesson assets
+input:
+  lesson_id: "topology_basics"
+  storyboard: storyboard_reference
+  asset_list: ["cube_topology_demo", "character_topology_comparison"]
+
+output:
+  blender_files:
+    - "topology_basics_scene.blend"
+  exported_assets:
+    - "cube_topology_demo.fbx"
+    - "character_topology_comparison.fbx"
+  textures:
+    - "wireframe_overlay.png"
+```
+
+### Stage 3 Tools: BUILD (Unity MCP)
+
+These tools assemble the course in Unity.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `create_lesson_scene` | Set up Unity scene from storyboard |
+| `import_lesson_assets` | Bring in Blender exports with correct settings |
+| `setup_lesson_progression` | Configure lesson flow and navigation |
+| `add_interactive_elements` | Implement click/hover/drag interactions |
+| `integrate_audio_narration` | Sync audio with scene progression |
+| `configure_assessment` | Set up quizzes and knowledge checks |
+
+```yaml
+# Example: Assembling in Unity
+input:
+  lesson_id: "topology_basics"
+  assets: [exported_blender_assets]
+  script: narration_script
+  interactions: interaction_definitions
+
+output:
+  unity_scene: "Lesson_TopologyBasics.unity"
+  prefabs_created: 5
+  interactions_configured: 3
+  audio_synced: true
+```
+
+### Stage 3 Tools: BUILD (Supporting Tools)
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `generate_narration_audio` | Create voiceover from scripts (TTS or guide for recording) |
+| `create_ui_graphics` | Generate UI elements for the lesson |
+| `optimize_textures` | Prepare textures at correct resolutions |
+| `generate_thumbnails` | Create preview images for lessons |
+
+### Stage 4 Tools: BUILD → REVIEW
+
+These tools test and validate the course.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `run_playthrough_test` | Automated walkthrough of all lessons |
+| `check_learning_objective_coverage` | Verify all objectives are addressed |
+| `validate_interactions` | Test all interactive elements work |
+| `accessibility_check` | Verify accessibility requirements |
+| `performance_profile` | Check performance on target platforms |
+
+```yaml
+# Example: Review process
+input:
+  course_build: complete_course
+
+output:
+  test_report:
+    lessons_tested: 24
+    interactions_validated: 156
+    objectives_covered: 48/48
+    accessibility_score: 94%
+    performance_rating: "Good"
+  issues_found:
+    - lesson_12: "Audio desync at 2:34"
+    - lesson_18: "Interaction not responding on mobile"
+```
+
+### Stage 5 Tools: REVIEW → DONE
+
+These tools finalize and publish the course.
+
+| Tool | Purpose in Workflow |
+|------|---------------------|
+| `build_for_platform` | Create builds for target platforms |
+| `package_scorm` | Create LMS-compatible package |
+| `generate_documentation` | Create instructor guides, syllabi |
+| `create_marketing_assets` | Generate promotional materials |
+| `deploy_to_staging` | Push to staging environment |
+| `publish_release` | Final deployment to production |
+
+```yaml
+# Example: Publishing
+input:
+  reviewed_course: qa_passed_build
+  target_platforms: ["web", "mobile", "desktop"]
+
+output:
+  builds:
+    - web_build: "course_v1.0_web.zip"
+    - mobile_build: "course_v1.0.apk"
+    - desktop_build: "course_v1.0_win.exe"
+  scorm_package: "course_v1.0_scorm.zip"
+  documentation:
+    - instructor_guide.pdf
+    - learner_syllabus.pdf
+  status: DONE
+```
+
+---
+
+## Tool Implementations
+
+### Blender MCP Server
+
+The Blender MCP server focuses exclusively on course asset creation.
+
+```python
+class BlenderCourseMCP:
+    """
+    Blender MCP tools exist only to create assets 
+    that move lessons from draft to built.
+    """
+    
+    # Stage 3 Tools - Asset Creation
+    
+    def create_lesson_environment(self, lesson_spec: dict):
+        """Create complete 3D environment for a lesson."""
+        # Reads storyboard, creates scene, exports for Unity
+        pass
+    
+    def generate_demonstration_model(self, concept: str, style: str):
+        """Create a model that demonstrates a specific concept."""
+        # Purpose-built for educational clarity
+        pass
+    
+    def setup_camera_sequence(self, storyboard: dict):
+        """Configure cameras to match storyboard shots."""
+        # Each camera position serves the lesson narrative
+        pass
+    
+    def export_for_unity(self, scene: str):
+        """Export all assets Unity-ready."""
+        # Optimized for the course runtime
+        pass
+```
+
+### Unity MCP Server
+
+The Unity MCP server focuses exclusively on course assembly and delivery.
+
+```csharp
+// Unity MCP tools exist only to assemble and deliver courses
+
+public class UnityCourseMCP
 {
-  name: "unity_create_scene",
-  description: "Create a new Unity scene with specified configuration",
-  parameters: {
-    scene_name: string,
-    template: "empty" | "classroom" | "lab" | "presentation",
-    lighting_preset: "indoor" | "outdoor" | "studio",
-    include_player: boolean
-  }
+    // Stage 3 Tools - Assembly
+    
+    public void CreateLessonScene(LessonSpec spec)
+    {
+        // Build scene from storyboard specification
+    }
+    
+    public void SetupLessonProgression(ProgressionConfig config)
+    {
+        // Configure how learner moves through content
+    }
+    
+    public void AddInteractiveElement(InteractionDef def)
+    {
+        // Add interaction that supports learning objective
+    }
+    
+    // Stage 4 Tools - Testing
+    
+    public TestReport RunPlaythroughTest(Course course)
+    {
+        // Automated testing of complete course
+    }
+    
+    // Stage 5 Tools - Publishing
+    
+    public Build BuildForPlatform(Platform target)
+    {
+        // Create deployable build
+    }
 }
 ```
 
-#### Prefab & Asset Tools
-
-| Tool | Function |
-|------|----------|
-| `unity_instantiate_prefab` | Place prefabs in scene |
-| `unity_modify_material` | Update material properties |
-| `unity_configure_animation` | Set up animation controllers |
-| `unity_setup_ui` | Create UI elements programmatically |
-| `unity_configure_physics` | Set up rigidbodies and colliders |
-
-#### Course-Specific Unity Tools
-
-| Tool | Description |
-|------|-------------|
-| `unity_create_quiz_system` | Generate interactive quiz mechanics |
-| `unity_setup_progress_tracking` | Implement learner progress system |
-| `unity_add_voiceover_trigger` | Sync audio with scene events |
-| `unity_create_hotspot` | Add interactive information points |
-| `unity_export_scorm` | Package for LMS compatibility |
-
-### Unity MCP Server Implementation Notes
-
-```python
-# Potential implementation approach
-class UnityMCPServer:
-    """
-    MCP Server that communicates with Unity via:
-    1. Unity Editor scripting (EditorWindow, MenuItems)
-    2. Unity's Command Line Interface
-    3. Custom Unity package with TCP/WebSocket listener
-    """
-    
-    def __init__(self, unity_project_path: str):
-        self.project_path = unity_project_path
-        self.editor_socket = None  # Connection to Unity Editor
-    
-    async def create_scene(self, scene_name: str, template: str):
-        # Send command to Unity Editor via socket
-        pass
-    
-    async def import_asset(self, asset_path: str, destination: str):
-        # Use Unity's AssetDatabase API
-        pass
-```
-
 ---
 
-## Blender Automation
+## Embabel Orchestration
 
-### MCP Server for Blender (`blender-mcp-server`)
+Embabel drives the entire None to Done workflow, invoking the right MCP tools at each stage.
 
-#### Core Modeling Tools
-
-| Tool Name | Description | Use Case |
-|-----------|-------------|----------|
-| `blender_create_model` | Generate 3D models | Asset creation |
-| `blender_apply_modifier` | Add/configure modifiers | Model refinement |
-| `blender_uv_unwrap` | Automated UV mapping | Texture preparation |
-| `blender_apply_material` | Create/assign materials | Visual styling |
-| `blender_rig_model` | Auto-rigging for characters | Animation prep |
-| `blender_export_model` | Export to various formats | Asset pipeline |
-
-#### Animation Tools
-
-| Tool | Function |
-|------|----------|
-| `blender_create_animation` | Generate keyframe animations |
-| `blender_apply_motion_path` | Define movement trajectories |
-| `blender_setup_armature` | Create bone structures |
-| `blender_bake_animation` | Bake procedural animations |
-| `blender_export_animation` | Export to FBX/glTF |
-
-#### Rendering Tools
-
-| Tool | Function |
-|------|----------|
-| `blender_setup_camera` | Configure camera positions |
-| `blender_configure_lighting` | Set up light sources |
-| `blender_render_image` | Render still images |
-| `blender_render_animation` | Render video sequences |
-| `blender_composite_output` | Post-processing setup |
-
-#### AI-Assisted Generation Tools
-
-| Tool | Description |
-|------|-------------|
-| `blender_generate_from_prompt` | AI-driven model generation |
-| `blender_texture_from_description` | AI texture creation |
-| `blender_suggest_topology` | Topology optimization |
-| `blender_auto_retopology` | Automated mesh cleanup |
-
-### Blender MCP Server Implementation
-
-```python
-# Blender MCP Server runs as Blender addon
-class BlenderMCPServer:
-    """
-    Runs inside Blender as an addon, exposing Python API via MCP.
-    
-    Communication methods:
-    1. Blender's Python API (bpy)
-    2. Background Blender process with socket listener
-    3. Blender CLI with Python scripts
-    """
-    
-    def create_model(self, model_type: str, parameters: dict):
-        import bpy
-        # Use bpy to create geometry
-        pass
-    
-    def export_model(self, format: str, path: str):
-        import bpy
-        bpy.ops.export_scene.fbx(filepath=path)
-```
-
-### Blender Python Script Examples
-
-```python
-# Example: Automated classroom asset creation
-def create_classroom_desk():
-    import bpy
-    
-    # Create desk surface
-    bpy.ops.mesh.primitive_cube_add(size=1)
-    desk = bpy.context.active_object
-    desk.scale = (1.2, 0.6, 0.05)
-    desk.location.z = 0.75
-    
-    # Create legs
-    for x, y in [(-0.5, -0.25), (0.5, -0.25), (-0.5, 0.25), (0.5, 0.25)]:
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.03, depth=0.75)
-        leg = bpy.context.active_object
-        leg.location = (x, y, 0.375)
-    
-    return desk
-```
-
----
-
-## Additional Tool Integrations
-
-### Image/Texture Tools
-
-#### Photoshop/GIMP MCP Server
-
-| Tool | Description |
-|------|-------------|
-| `image_resize` | Batch resize images |
-| `image_apply_filter` | Apply effects/filters |
-| `image_generate_texture` | Create tileable textures |
-| `image_remove_background` | AI background removal |
-| `image_create_sprite_sheet` | Generate sprite sheets |
-
-### Video Production Tools
-
-#### DaVinci Resolve / Premiere MCP Server
-
-| Tool | Description |
-|------|-------------|
-| `video_import_footage` | Import video clips |
-| `video_apply_transition` | Add transitions |
-| `video_add_text_overlay` | Insert text/titles |
-| `video_sync_audio` | Align audio tracks |
-| `video_export_render` | Render final output |
-
-### Audio Tools
-
-#### Audacity / Adobe Audition MCP Server
-
-| Tool | Description |
-|------|-------------|
-| `audio_normalize` | Normalize audio levels |
-| `audio_remove_noise` | Noise reduction |
-| `audio_add_effect` | Apply audio effects |
-| `audio_generate_speech` | TTS integration |
-| `audio_export` | Export in various formats |
-
-### Documentation Tools
-
-#### Markdown/Documentation MCP Server
-
-| Tool | Description |
-|------|-------------|
-| `docs_generate_readme` | Auto-generate documentation |
-| `docs_create_tutorial` | Generate step-by-step guides |
-| `docs_export_pdf` | Convert to PDF format |
-| `docs_sync_wiki` | Update wiki pages (OPCD Wiki integration) |
-
----
-
-## Workflow Automation Scenarios
-
-### Scenario 1: Automated Lesson Creation
+### Workflow Definition
 
 ```yaml
-workflow: create_lesson
-trigger: new_lesson_request
-steps:
-  1. Parse lesson outline (Embabel NLP)
-  2. Generate 3D assets (Blender MCP)
-     - Create environment models
-     - Generate character assets
-     - Export to Unity-compatible format
-  3. Set up Unity scene (Unity MCP)
-     - Import generated assets
-     - Configure lighting and camera
-     - Add interactive elements
-  4. Create supporting materials
-     - Generate textures (Image MCP)
-     - Process audio narration (Audio MCP)
-  5. Build and test (Unity MCP)
-     - Run automated tests
-     - Build for target platform
-  6. Update documentation (Docs MCP)
+workflow: none_to_done
+name: "Complete Course Creation"
+
+stages:
+  - stage: concept
+    tools:
+      - course_outline_from_topic
+      - learning_objectives_generator
+      - module_structure_builder
+    gate: outline_approved
+    
+  - stage: draft
+    tools:
+      - lesson_script_generator
+      - storyboard_creator
+      - asset_requirements_compiler
+      - interaction_designer
+    gate: content_plan_complete
+    
+  - stage: build
+    parallel:
+      - tools: [blender_create_lesson_environment, blender_generate_demonstration_model]
+        for_each: lesson
+      - tools: [generate_narration_audio]
+        for_each: script
+    then:
+      - tools: [unity_create_lesson_scene, unity_import_lesson_assets]
+        for_each: lesson
+      - tools: [unity_setup_lesson_progression, unity_add_interactive_elements]
+    gate: all_lessons_assembled
+    
+  - stage: review
+    tools:
+      - run_playthrough_test
+      - check_learning_objective_coverage
+      - validate_interactions
+      - accessibility_check
+    gate: qa_passed
+    
+  - stage: done
+    tools:
+      - build_for_platform
+      - package_scorm
+      - generate_documentation
+      - publish_release
+    gate: published
 ```
 
-### Scenario 2: Asset Pipeline Automation
+### Embabel Commands
 
-```yaml
-workflow: asset_pipeline
-trigger: new_asset_upload
-steps:
-  1. Validate asset format
-  2. Process in Blender:
-     - Auto-retopology if needed
-     - Generate LODs
-     - UV unwrap and bake textures
-  3. Export to Unity:
-     - FBX for models
-     - PNG for textures
-  4. Import to Unity project:
-     - Configure import settings
-     - Generate prefab
-     - Add to asset database
-  5. Run quality checks:
-     - Polygon count verification
-     - Texture resolution check
-     - Material compatibility test
 ```
+User: "Create a course on Introduction to 3D Modeling"
 
-### Scenario 3: Course Update Workflow
+Embabel:
+1. Invokes course_outline_from_topic("Introduction to 3D Modeling")
+2. Generates learning objectives for each module
+3. Creates detailed lesson plans
+4. For each lesson:
+   - Generates storyboard
+   - Creates assets in Blender
+   - Assembles in Unity
+5. Runs full test suite
+6. Builds and publishes
 
-```yaml
-workflow: update_course
-trigger: content_revision
-steps:
-  1. Identify affected scenes/assets
-  2. Generate updated 3D content (Blender)
-  3. Update Unity scenes
-  4. Re-render preview images
-  5. Update documentation
-  6. Build new version
-  7. Deploy to staging
-  8. Run regression tests
+Result: Complete, published course
 ```
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1: Foundation (Core Infrastructure)
+### Phase 1: Core Workflow Tools
 
-- [ ] Set up Embabel orchestration framework
-- [ ] Create basic MCP server template
-- [ ] Implement communication protocols
-- [ ] Develop logging and monitoring system
+- [ ] `course_outline_from_topic` - Concept stage entry point
+- [ ] `lesson_script_generator` - Draft stage core tool
+- [ ] `asset_requirements_compiler` - Draft to Build bridge
 
-### Phase 2: Blender Integration
+### Phase 2: Blender MCP (Build Stage)
 
-- [ ] Develop Blender MCP addon
-- [ ] Implement core modeling tools
-- [ ] Add animation automation
-- [ ] Create export pipeline tools
-- [ ] Test with sample assets
+- [ ] `create_lesson_environment` - Scene creation
+- [ ] `generate_demonstration_model` - Asset creation
+- [ ] `export_for_unity` - Build pipeline
 
-### Phase 3: Unity Integration
+### Phase 3: Unity MCP (Build Stage)
 
-- [ ] Create Unity MCP package
-- [ ] Implement scene management tools
-- [ ] Add asset import automation
-- [ ] Develop build pipeline tools
-- [ ] Test with sample projects
+- [ ] `create_lesson_scene` - Scene assembly
+- [ ] `import_lesson_assets` - Asset integration
+- [ ] `setup_lesson_progression` - Flow configuration
+- [ ] `add_interactive_elements` - Interaction layer
 
-### Phase 4: Extended Tools
+### Phase 4: Review & Publish Tools
 
-- [ ] Image processing MCP server
-- [ ] Audio processing MCP server
-- [ ] Video editing MCP server
-- [ ] Documentation MCP server
+- [ ] `run_playthrough_test` - Automated QA
+- [ ] `validate_interactions` - Interaction testing
+- [ ] `build_for_platform` - Build generation
+- [ ] `publish_release` - Final deployment
 
-### Phase 5: Advanced Automation
+### Phase 5: Embabel Integration
 
-- [ ] AI-assisted content generation
-- [ ] Natural language workflow creation
-- [ ] Quality assurance automation
-- [ ] Deployment pipeline integration
-
-### Phase 6: OPCD Wiki Integration
-
-- [ ] Connect to Open Project Community Designers Wiki
-- [ ] Automated documentation sync
-- [ ] Community template sharing
-- [ ] Collaborative workflow definitions
+- [ ] Workflow orchestration engine
+- [ ] Stage gate management
+- [ ] Progress tracking
+- [ ] Error recovery
 
 ---
 
-## Technical Considerations
+## Summary
 
-### Communication Protocols
+The MCP tools in this system are **not** general-purpose automation utilities. Each tool exists to:
 
-1. **WebSocket**: Real-time bidirectional communication
-2. **HTTP/REST**: Request-response patterns
-3. **gRPC**: High-performance RPC calls
-4. **Named Pipes**: Local process communication
+1. **Move content forward** through the None to Done pipeline
+2. **Bridge specific stages** in the workflow
+3. **Eliminate manual bottlenecks** that slow course creation
+4. **Maintain quality** while enabling speed
 
-### Security Considerations
-
-- Sandboxed execution environments
-- API key authentication for MCP servers
-- Rate limiting for resource-intensive operations
-- Audit logging for all operations
-
-### Performance Optimization
-
-- Batch operations where possible
-- Async/parallel processing
-- Caching for frequently used assets
-- Progress reporting for long operations
-
-### Error Handling
-
-- Graceful degradation
-- Retry mechanisms with backoff
-- Detailed error reporting
-- Rollback capabilities for failed workflows
+By keeping this focus, we ensure that every tool we build directly contributes to the goal: **taking a course from nothing to published**.
 
 ---
 
-## Example MCP Tool Definitions
+## References
 
-### Unity Scene Creation Tool
-
-```json
-{
-  "name": "unity_create_learning_scene",
-  "description": "Create a complete learning scene with interactive elements",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "scene_name": {
-        "type": "string",
-        "description": "Name of the scene to create"
-      },
-      "environment_type": {
-        "type": "string",
-        "enum": ["classroom", "laboratory", "outdoor", "virtual_space"],
-        "description": "Type of learning environment"
-      },
-      "interactive_elements": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "type": {"type": "string"},
-            "position": {"type": "array"},
-            "content": {"type": "string"}
-          }
-        }
-      },
-      "include_avatar": {
-        "type": "boolean",
-        "description": "Include instructor avatar"
-      }
-    },
-    "required": ["scene_name", "environment_type"]
-  }
-}
-```
-
-### Blender Asset Generation Tool
-
-```json
-{
-  "name": "blender_generate_course_asset",
-  "description": "Generate a 3D asset for course content",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "asset_description": {
-        "type": "string",
-        "description": "Natural language description of the asset"
-      },
-      "style": {
-        "type": "string",
-        "enum": ["realistic", "stylized", "low_poly", "cartoon"],
-        "description": "Visual style of the asset"
-      },
-      "target_platform": {
-        "type": "string",
-        "enum": ["unity", "unreal", "web", "mobile"],
-        "description": "Target platform for optimization"
-      },
-      "poly_budget": {
-        "type": "integer",
-        "description": "Maximum polygon count"
-      }
-    },
-    "required": ["asset_description", "style"]
-  }
-}
-```
-
----
-
-## Existing Resources & References
-
-- **OPCD Wiki**: [Open Project Community Designers Wiki](https://open-project-community-designers.github.io/OPCD-Wiki/) - Community resources for project design patterns
-- **MCP Specification**: Anthropic's Model Context Protocol documentation
-- **Blender Python API**: Official Blender scripting documentation
-- **Unity Scripting Reference**: Unity's C# API documentation
-
----
-
-## Next Steps
-
-1. **Evaluate Embabel capabilities** for orchestration requirements
-2. **Prototype Blender MCP server** with basic modeling tools
-3. **Prototype Unity MCP server** with scene management
-4. **Define workflow schemas** for common course creation tasks
-5. **Create integration tests** for tool communication
-6. **Document API contracts** between MCP servers
-
----
-
-## Conclusion
-
-By leveraging Embabel as the orchestration layer and developing MCP servers for Unity, Blender, and other creative tools, we can create a powerful automation pipeline for course content creation. This approach enables:
-
-- **Efficiency**: Reduce manual repetitive tasks
-- **Consistency**: Standardized asset and scene creation
-- **Scalability**: Handle larger content volumes
-- **Flexibility**: Easy to extend with new tools
-- **AI Integration**: Natural language control of complex workflows
-
-The modular MCP architecture allows for incremental development and testing, making it possible to start with basic automation and progressively add more sophisticated capabilities.
+- **OPCD Wiki**: [Open Project Community Designers Wiki](https://open-project-community-designers.github.io/OPCD-Wiki/)
+- **MCP Specification**: Model Context Protocol documentation
+- **Embabel**: AI-driven workflow orchestration framework
