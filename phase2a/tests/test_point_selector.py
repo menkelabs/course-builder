@@ -305,7 +305,7 @@ class TestMaskGeneratorPointGeneration:
         reason="Resource image not available for SAM testing"
     )
     @pytest.mark.skipif(
-        not (Path(__file__).parent.parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth").exists(),
+        not (Path(__file__).parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth").exists(),
         reason="SAM checkpoint not available"
     )
     def test_generate_from_point_with_sam(self):
@@ -315,7 +315,7 @@ class TestMaskGeneratorPointGeneration:
         
         # Load test image
         image_path = Path(__file__).parent.parent / "resources" / "Pictatinny_B.jpg"
-        checkpoint_path = Path(__file__).parent.parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth"
+        checkpoint_path = Path(__file__).parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth"
         
         if not image_path.exists() or not checkpoint_path.exists():
             pytest.skip("Required files not available")
