@@ -21,6 +21,7 @@ from .holes import HoleAssigner
 from .svg import SVGGenerator, SVGCleaner
 from .export import PNGExporter
 from .interactive import InteractiveSelector, HoleSelection, FeatureType
+from .point_selector import PointBasedSelector
 
 __all__ = [
     "MaskGenerator",
@@ -35,4 +36,5 @@ __all__ = [
     "InteractiveSelector",
     "HoleSelection",
     "FeatureType",
+    "PointBasedSelector",
 ]

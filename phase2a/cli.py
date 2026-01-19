@@ -499,16 +499,18 @@ def select(
     Interactive hole-by-hole feature selection workflow.
     
     Workflow:
-    1. Prepare: Generate all candidate masks
-    2. For each hole (1-18):
+    1. For each hole (1-18):
        a. Prompt: "Click on the green for hole N"
-       b. User selects masks
+       b. User clicks on image - tool generates mask around that point
        c. Prompt: "Click on the tee for hole N"
-       d. User selects masks
+       d. User clicks on image - tool generates mask around that point
        e. Prompt: "Click on fairway items for hole N"
-       f. User selects masks
+       f. User clicks on image - tool generates mask around that point
        g. Prompt: "Click on bunkers for hole N"
-       h. User selects masks
+       h. User clicks on image - tool generates mask around that point
+    
+    The tool uses SAM to automatically find the area around each click point
+    and assigns it to the appropriate feature type for Inkscape export.
     
     IMAGE: Path to satellite image (PNG/JPG)
     """
@@ -526,57 +528,61 @@ def select(
         # Load image
         image_array = np.array(Image.open(image).convert("RGB"))
         
-        # Step 1: Prepare - Generate all masks
-        console.print("[cyan]Step 1: Preparing masks...[/cyan]")
+        # Initialize mask generator for point-based selection
+        console.print("[cyan]Initializing SAM model for point-based mask generation...[/cyan]")
         generator = MaskGenerator(
             model_type=model_type,
             checkpoint_path=str(checkpoint),
+            device="cuda",  # Use CUDA if available
         )
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Generating candidate masks...", total=None)
-            masks = generator.generate(image_array)
-            progress.update(task, description="[green]Complete!")
+        # Initialize point-based selector
+        from .pipeline.point_selector import PointBasedSelector
+        selector = PointBasedSelector(image_array, generator)
         
-        console.print(f"[green]✓ Generated {len(masks)} candidate masks[/green]\n")
+        console.print("[green]✓ Ready for interactive selection[/green]")
+        console.print("[dim]Click on the image to mark feature locations. SAM will find the area around each click.[/dim]\n")
         
-        # Save masks
-        masks_dir = output / "masks"
-        generator.save_masks(masks, masks_dir)
-        
-        # Initialize selector
-        selector = InteractiveSelector(masks, image_array)
-        
-        # Load existing selections if provided
-        if selections and selections.exists():
-            console.print(f"[cyan]Loading existing selections from {selections}[/cyan]")
-            loaded_selections = InteractiveSelector.load_selections(selections)
-            selector.selections = loaded_selections
-            console.print(f"[green]✓ Loaded selections for {len(loaded_selections)} holes[/green]\n")
-        
-        # Interactive selection workflow with matplotlib
+        # Interactive selection workflow with matplotlib (point-based)
         try:
             from .pipeline.visualize import InteractiveMaskSelector
         except ImportError:
-            console.print("[yellow]matplotlib not available, falling back to text input[/yellow]")
-            _interactive_text_mode(console, selector)
+            console.print("[red]matplotlib is required for interactive selection[/red]")
+            sys.exit(1)
         else:
-            _interactive_click_mode(console, selector)
+            _interactive_point_mode(console, selector, image_array)
+        
+        # Save selections and generated masks
+        output.mkdir(parents=True, exist_ok=True)
+        metadata_dir = output / "metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
         
         # Save selections
-        selections_path = output / "metadata" / "interactive_selections.json"
-        selector.save_selections(selections_path)
+        selections_path = metadata_dir / "interactive_selections.json"
+        selections_data = {
+            "selections": {
+                str(hole): selection.to_dict()
+                for hole, selection in selector.get_all_selections().items()
+            }
+        }
+        with open(selections_path, "w") as f:
+            json.dump(selections_data, f, indent=2)
         console.print(f"\n[green]✓ Saved selections to {selections_path}[/green]")
+        
+        # Save generated masks
+        if selector.generated_masks:
+            masks_dir = output / "masks"
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            from .pipeline.masks import MaskGenerator
+            # Create a temporary generator just for saving
+            temp_gen = MaskGenerator(checkpoint_path=str(checkpoint))
+            temp_gen.save_masks(list(selector.generated_masks.values()), masks_dir)
+            console.print(f"[green]✓ Saved {len(selector.generated_masks)} generated masks to {masks_dir}[/green]")
         
         # Extract and save green centers from selected green masks
         green_centers = selector.extract_green_centers()
         if green_centers:
-            green_centers_path = output / "metadata" / "green_centers.json"
-            green_centers_path.parent.mkdir(parents=True, exist_ok=True)
+            green_centers_path = metadata_dir / "green_centers.json"
             with open(green_centers_path, "w") as f:
                 json.dump(green_centers, f, indent=2)
             console.print(f"[green]✓ Extracted and saved green centers to {green_centers_path}[/green]")
@@ -594,6 +600,70 @@ def select(
         if verbose:
             console.print_exception()
         sys.exit(1)
+
+
+def _interactive_point_mode(console, selector, image_array):
+    """Interactive point-based selection using matplotlib clicking."""
+    from .pipeline.visualize import InteractiveMaskSelector
+    from .pipeline.interactive import FeatureType
+    
+    console.print("[cyan]Interactive Point Selection Mode[/cyan]")
+    console.print("[dim]Click anywhere on the image to mark feature locations.[/dim]")
+    console.print("[dim]SAM will automatically find the area around each click.[/dim]")
+    console.print("[dim]Press Enter/Space or click 'Done' when finished with each feature.[/dim]\n")
+    
+    holes_to_process = list(range(1, 19))  # Holes 1-18
+    
+    for hole in holes_to_process:
+        console.print(f"\n[bold yellow]Hole {hole}[/bold yellow]")
+        
+        feature_types = [
+            (FeatureType.GREEN, "green(s)"),
+            (FeatureType.TEE, "tee(s)"),
+            (FeatureType.FAIRWAY, "fairway items"),
+            (FeatureType.BUNKER, "bunker(s)"),
+        ]
+        
+        for feature_type, feature_name in feature_types:
+            console.print(f"\n[cyan]Click on {feature_name} for hole {hole}[/cyan]")
+            console.print("[dim]Click on the image where you see the {feature_name}. You can click multiple times.[/dim]")
+            console.print("[dim]Press Enter/Space or click 'Done' when finished[/dim]")
+            
+            # Create interactive selector
+            interactive = InteractiveMaskSelector(
+                selector,
+                title=f"Hole {hole} - Click on {feature_name} (SAM will find the area)",
+            )
+            
+            # Set current hole and feature type for point-based generation
+            interactive._current_hole = hole
+            interactive._current_feature_type = feature_type
+            
+            # Show current selections for this feature type
+            hole_selection = selector.get_selection_for_hole(hole)
+            if hole_selection:
+                if feature_type == FeatureType.GREEN:
+                    existing = hole_selection.greens
+                elif feature_type == FeatureType.TEE:
+                    existing = hole_selection.tees
+                elif feature_type == FeatureType.FAIRWAY:
+                    existing = hole_selection.fairways
+                elif feature_type == FeatureType.BUNKER:
+                    existing = hole_selection.bunkers
+                else:
+                    existing = []
+                interactive.selected_mask_ids = existing.copy()
+            
+            # Show interactive window (blocks until Done is pressed)
+            interactive.show(block=True)
+            
+            # Get selected masks (already assigned via click_to_mask)
+            selected_ids = interactive.get_selected_mask_ids()
+            
+            if selected_ids:
+                console.print(f"[green]✓ Marked {len(selected_ids)} {feature_name} location(s)[/green]")
+            else:
+                console.print(f"[dim]No {feature_name} marked[/dim]")
 
 
 def _interactive_click_mode(console, selector):

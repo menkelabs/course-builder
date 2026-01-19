@@ -112,26 +112,43 @@ class InteractiveMaskSelector:
             x = int(event.xdata)
             y = int(event.ydata)
             
-            # Find mask at clicked point
-            mask_id = self.selector.get_mask_at_point(x, y)
-            
-            if mask_id:
-                # Toggle selection
-                if mask_id in self.selected_mask_ids:
-                    self.selected_mask_ids.remove(mask_id)
-                    logger.info(f"Deselected mask: {mask_id}")
-                else:
-                    self.selected_mask_ids.append(mask_id)
-                    logger.info(f"Selected mask: {mask_id}")
-                
-                # Update display
-                self._redraw()
-                
-                # Call callback if provided
-                if self.click_callback:
-                    self.click_callback(mask_id)
+            # Check if this is a point-based selector (has click_to_mask method)
+            if hasattr(self.selector, 'click_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
+                # Point-based mode: generate mask from click
+                mask_data = self.selector.click_to_mask(
+                    x, y,
+                    self._current_hole,
+                    self._current_feature_type
+                )
+                if mask_data:
+                    # Add to selected masks
+                    if mask_data.id not in self.selected_mask_ids:
+                        self.selected_mask_ids.append(mask_data.id)
+                    # Update display
+                    self._redraw()
+                    if self.click_callback:
+                        self.click_callback(mask_data.id)
             else:
-                logger.warning(f"No mask found at ({x}, {y})")
+                # Original mask selection mode: find existing mask
+                mask_id = self.selector.get_mask_at_point(x, y)
+                
+                if mask_id:
+                    # Toggle selection
+                    if mask_id in self.selected_mask_ids:
+                        self.selected_mask_ids.remove(mask_id)
+                        logger.info(f"Deselected mask: {mask_id}")
+                    else:
+                        self.selected_mask_ids.append(mask_id)
+                        logger.info(f"Selected mask: {mask_id}")
+                    
+                    # Update display
+                    self._redraw()
+                    
+                    # Call callback if provided
+                    if self.click_callback:
+                        self.click_callback(mask_id)
+                else:
+                    logger.warning(f"No mask found at ({x}, {y})")
     
     def _on_done(self, event):
         """Handle Done button press."""
@@ -157,7 +174,14 @@ class InteractiveMaskSelector:
             return  # Cannot redraw if window not initialized
         
         image = self.selector.image
-        masks = list(self.selector.masks.values())
+        
+        # Get masks - either from selector.masks or from generated_masks
+        if hasattr(self.selector, 'generated_masks'):
+            # Point-based selector
+            masks = list(self.selector.generated_masks.values())
+        else:
+            # Original selector
+            masks = list(self.selector.masks.values())
         
         overlay = create_mask_overlay(image, masks, self.selected_mask_ids)
         

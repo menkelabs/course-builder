@@ -38,11 +38,21 @@ phase2a select ../phase2a/resources/Pictatinny_B.jpg \
 ```
 
 **During the interactive workflow:**
-1. For each hole (1-18), you'll be prompted to click on the green
-2. The tool automatically calculates the green center from your selections
-3. Green centers are saved to `test_interactive/metadata/green_centers.json`
+1. For each hole (1-18), you'll be prompted to click on feature locations:
+   - **Green**: Click where you see the green
+   - **Tee**: Click where you see the tee box
+   - **Fairway**: Click on fairway areas
+   - **Bunker**: Click on bunkers
+2. **SAM automatically finds the area** around each click point and generates a mask
+3. The tool assigns each generated mask to the appropriate feature type
+4. Green centers are automatically calculated from green mask centroids
+5. All selections and masks are saved for use with the pipeline
 
-**Note:** The green centers are automatically extracted from the centroid of all selected green masks for each hole. You don't need to manually create a green centers file!
+**How it works:**
+- You click on the satellite image where you see a feature (e.g., green, bunker)
+- SAM uses that click point to automatically segment the area around it
+- The generated mask is assigned to the feature type you're currently selecting
+- No need to manually trace or select pre-generated masks - just click and SAM finds the area!
 
 ### Step 2: Run Complete Pipeline
 

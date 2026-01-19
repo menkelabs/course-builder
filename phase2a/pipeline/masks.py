@@ -78,6 +78,7 @@ class MaskGenerator:
         
         self._sam = None
         self._mask_generator = None
+        self._predictor = None
     
     def _load_model(self) -> None:
         """Lazy-load SAM model."""
@@ -86,7 +87,7 @@ class MaskGenerator:
         
         try:
             import torch
-            from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+            from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
         except ImportError:
             raise ImportError(
                 "segment-anything is required for mask generation. "
@@ -112,7 +113,88 @@ class MaskGenerator:
             min_mask_region_area=self.min_mask_region_area,
         )
         
+        # Also create predictor for point-based mask generation
+        self._predictor = SamPredictor(self._sam)
+        
         logger.info("SAM model loaded successfully")
+    
+    def generate_from_point(
+        self,
+        image: np.ndarray,
+        point: tuple,  # (x, y) in image coordinates
+        label: int = 1,  # 1 = foreground point, 0 = background point
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask from a point prompt.
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format
+            point: Point coordinates (x, y) in image space
+            label: Point label (1 = foreground, 0 = background)
+            
+        Returns:
+            MaskData object or None if generation fails
+        """
+        self._load_model()
+        
+        x, y = point
+        height, width = image.shape[:2]
+        
+        # Validate point
+        if x < 0 or x >= width or y < 0 or y >= height:
+            logger.warning(f"Point ({x}, {y}) is outside image bounds ({width}, {height})")
+            return None
+        
+        # Set image for predictor
+        self._predictor.set_image(image)
+        
+        # Generate mask from point
+        input_point = np.array([[x, y]])
+        input_label = np.array([label])
+        
+        masks, scores, logits = self._predictor.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            multimask_output=True,
+        )
+        
+        # Select best mask (highest score)
+        if len(masks) == 0:
+            return None
+        
+        best_idx = np.argmax(scores)
+        mask = masks[best_idx]
+        score = float(scores[best_idx])
+        
+        # Convert to MaskData
+        mask_area = int(np.sum(mask))
+        if mask_area < self.min_mask_region_area:
+            logger.debug(f"Generated mask too small ({mask_area} < {self.min_mask_region_area})")
+            return None
+        
+        # Calculate bounding box
+        y_coords, x_coords = np.where(mask)
+        if len(y_coords) == 0:
+            return None
+        
+        bbox = (
+            int(x_coords.min()),
+            int(y_coords.min()),
+            int(x_coords.max() - x_coords.min()),
+            int(y_coords.max() - y_coords.min()),
+        )
+        
+        mask_data = MaskData(
+            id=f"point_mask_{x}_{y}",
+            mask=mask,
+            area=mask_area,
+            bbox=bbox,
+            predicted_iou=score,
+            stability_score=score,
+        )
+        
+        logger.debug(f"Generated mask from point ({x}, {y}): area={mask_area}, score={score:.3f}")
+        return mask_data
     
     def generate(self, image: np.ndarray) -> List[MaskData]:
         """
