@@ -16,22 +16,41 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Set matplotlib backend before any imports
+# IMPORTANT: Use the GUI backend that's available - do NOT use headless/Agg
+# Force GUI backend by unsetting any headless environment variables
+import os
+os.environ.pop('MPLBACKEND', None)  # Remove headless backend if set
+
 MATPLOTLIB_GUI_AVAILABLE = False
+GUI_BACKEND = None
+
 try:
     import matplotlib
-    matplotlib.use('Qt5Agg')  # Use Qt backend for GUI testing (can use TkAgg as fallback)
-    
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    MATPLOTLIB_GUI_AVAILABLE = True
-except ImportError:
+    # Try TkAgg first (more stable in headless/SSH environments)
+    # Then fallback to Qt5Agg
     try:
-        import matplotlib
-        matplotlib.use('TkAgg')
+        matplotlib.use('TkAgg', force=True)
         import matplotlib.pyplot as plt
+        # Test that it actually works
+        fig, ax = plt.subplots()
+        plt.close(fig)
         MATPLOTLIB_GUI_AVAILABLE = True
-    except ImportError:
-        MATPLOTLIB_GUI_AVAILABLE = False
+        GUI_BACKEND = 'TkAgg'
+    except (ImportError, RuntimeError, Exception):
+        # Fallback to Qt5Agg
+        try:
+            matplotlib.use('Qt5Agg', force=True)
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+            # Test that it actually works
+            fig, ax = plt.subplots()
+            plt.close(fig)
+            MATPLOTLIB_GUI_AVAILABLE = True
+            GUI_BACKEND = 'Qt5Agg'
+        except (ImportError, RuntimeError, Exception):
+            MATPLOTLIB_GUI_AVAILABLE = False
+except ImportError:
+    MATPLOTLIB_GUI_AVAILABLE = False
 
 from phase2a.pipeline.masks import MaskData
 from phase2a.pipeline.interactive import InteractiveSelector, FeatureType
@@ -45,18 +64,28 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def gui_test_backend():
-    """Ensure we're using a GUI backend for tests."""
-    try:
-        import matplotlib
-        current_backend = matplotlib.get_backend()
-        # Check if backend is non-interactive (Agg only, not Qt5Agg or TkAgg)
-        if current_backend == 'Agg':
-            pytest.skip(f"Cannot run GUI tests with {current_backend} backend. Use Qt5Agg or TkAgg.")
-        return current_backend
-    except Exception:
-        pytest.skip("Could not determine matplotlib backend")
+    """Ensure we're using a GUI backend for tests - runs before each test."""
+    if not MATPLOTLIB_GUI_AVAILABLE:
+        pytest.skip("GUI backend not available")
+    
+    import matplotlib
+    import os
+    
+    # Force GUI backend - unset any headless settings
+    os.environ.pop('MPLBACKEND', None)
+    
+    # Ensure we're using the GUI backend
+    if GUI_BACKEND:
+        matplotlib.use(GUI_BACKEND, force=True)
+    
+    current_backend = matplotlib.get_backend()
+    # Verify we're using a GUI backend (not Agg)
+    if current_backend == 'Agg':
+        pytest.skip(f"Cannot run GUI tests with {current_backend} backend. Use Qt5Agg or TkAgg.")
+    
+    return current_backend
 
 
 @pytest.fixture

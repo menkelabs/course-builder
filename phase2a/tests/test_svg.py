@@ -187,19 +187,20 @@ class TestSVGGeneratorColors:
     def test_default_colors(self):
         generator = SVGGenerator()
         
-        assert generator.colors["water"] == "#0066cc"
-        assert generator.colors["bunker"] == "#f5deb3"
-        assert generator.colors["green"] == "#228b22"
-        assert generator.colors["fairway"] == "#90ee90"
-        assert generator.colors["rough"] == "#556b2f"
+        # Colors should be from OPCD v4 palette (loaded from GPL file)
+        assert generator.colors["water"] == "#0000C0"  # Lake from OPCD
+        assert generator.colors["bunker"] == "#E5E5AA"  # Bunker from OPCD
+        assert generator.colors["green"] == "#BCE5A4"  # Green from OPCD
+        assert generator.colors["fairway"] == "#43E561"  # Fairway from OPCD
+        assert generator.colors["rough"] == "#278438"  # Rough from OPCD
     
     def test_custom_colors_override(self):
         generator = SVGGenerator(colors={"water": "#0000ff"})
         
-        # Custom color should override
+        # Custom color should override OPCD palette
         assert generator.colors["water"] == "#0000ff"
-        # Others should remain default
-        assert generator.colors["green"] == "#228b22"
+        # Others should remain OPCD defaults
+        assert generator.colors["green"] == "#BCE5A4"  # OPCD Green
     
     def test_colors_in_generated_svg(self, sample_assignments):
         generator = SVGGenerator(colors={"green": "#00ff00"})
