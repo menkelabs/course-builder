@@ -24,6 +24,7 @@ except ImportError:
 
 from .masks import MaskData
 from .interactive import InteractiveSelector, FeatureType
+from .svg import SVGGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def create_mask_overlay(
 ) -> np.ndarray:
     """
     Create an overlay visualization showing masks on the image.
+    Uses OPCD palette colors based on feature type.
     
     Args:
         image: Source image (H, W, 3) in RGB
@@ -50,17 +52,51 @@ def create_mask_overlay(
     
     selected_ids = set(selected_mask_ids or [])
     
+    # Load OPCD palette colors
+    opcd_colors = SVGGenerator.load_opcd_palette()
+    
+    # Convert hex colors to RGB arrays
+    def hex_to_rgb(hex_color: str) -> np.ndarray:
+        """Convert hex color (#RRGGBB) to RGB array."""
+        hex_color = hex_color.lstrip('#')
+        return np.array([int(hex_color[i:i+2], 16) for i in (0, 2, 4)])
+    
+    # Default colors if feature type can't be determined
+    default_color = hex_to_rgb(opcd_colors.get('ignore', '#CCCCCC'))
+    selected_highlight = np.array([255, 0, 0])  # Red border for selected
+    
     for mask_data in masks:
         mask = mask_data.mask
         is_selected = mask_data.id in selected_ids
         
-        # Choose color: red for selected, yellow for unselected
+        # Determine feature type from mask ID
+        # Format: "green_1_0000", "fairway_2_0001", "bunker_1_0002", etc.
+        mask_id_lower = mask_data.id.lower()
+        feature_color = default_color
+        
+        if 'green' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('green', '#BCE5A4'))
+        elif 'fairway' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('fairway', '#43E561'))
+        elif 'bunker' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('bunker', '#E5E5AA'))
+        elif 'tee' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('tee', '#A0E5B8'))
+        elif 'rough' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('rough', '#278438'))
+        elif 'water' in mask_id_lower or 'lake' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('water', '#0000C0'))
+        elif 'cart_path' in mask_id_lower or 'concrete' in mask_id_lower:
+            feature_color = hex_to_rgb(opcd_colors.get('cart_path', '#BEBEBB'))
+        
+        # Use feature color, but make selected masks more visible
         if is_selected:
-            color = np.array([255, 0, 0])  # Red
+            # Blend feature color with red highlight for selected
+            color = (feature_color * 0.7 + selected_highlight * 0.3).astype(int)
             mask_alpha = alpha * 0.8  # More opaque for selected
         else:
-            color = np.array([255, 255, 0])  # Yellow
-            mask_alpha = alpha * 0.3  # Less opaque for unselected
+            color = feature_color
+            mask_alpha = alpha * 0.4  # Less opaque for unselected
         
         # Apply mask overlay
         for c in range(3):
