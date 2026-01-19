@@ -112,6 +112,87 @@ class PointBasedSelector:
         logger.info(f"Generated mask {mask_id} with area {mask_data.area}")
         return mask_data
     
+    def draw_to_mask(
+        self,
+        outline_points: List[tuple],
+        hole: int,
+        feature_type: FeatureType,
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask from a drawn outline and assign it to a feature type.
+        
+        This is the preferred method for accurate mask generation.
+        User draws an outline around the feature, and SAM uses it as a hint.
+        
+        Args:
+            outline_points: List of (x, y) coordinates from the drawn outline
+            hole: Hole number (1-18)
+            feature_type: Type of feature (green, fairway, bunker, tee)
+            
+        Returns:
+            Generated MaskData or None if generation failed
+        """
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form an outline")
+            return None
+        
+        # Calculate center for logging
+        xs = [p[0] for p in outline_points]
+        ys = [p[1] for p in outline_points]
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        logger.info(f"Generating mask from outline ({len(outline_points)} points) "
+                   f"for hole {hole}, {feature_type.value}")
+        
+        # Generate mask from outline using SAM
+        mask_data = self.mask_generator.generate_from_outline(
+            self.image,
+            outline_points=outline_points,
+        )
+        
+        if mask_data is None:
+            logger.warning(f"Failed to generate mask from outline")
+            return None
+        
+        # Create unique ID for this mask
+        mask_id = f"{feature_type.value}_{hole}_{len(self.generated_masks):04d}"
+        mask_data.id = mask_id
+        
+        # Store generated mask
+        self.generated_masks[mask_id] = mask_data
+        
+        # Add to selections
+        if hole not in self.selections:
+            self.selections[hole] = HoleSelection(hole=hole)
+        
+        selection = self.selections[hole]
+        
+        # Add to appropriate feature list
+        if feature_type == FeatureType.GREEN:
+            selection.greens.append(mask_id)
+        elif feature_type == FeatureType.TEE:
+            selection.tees.append(mask_id)
+        elif feature_type == FeatureType.FAIRWAY:
+            selection.fairways.append(mask_id)
+        elif feature_type == FeatureType.BUNKER:
+            selection.bunkers.append(mask_id)
+        elif feature_type == FeatureType.WATER:
+            selection.water.append(mask_id)
+        elif feature_type == FeatureType.ROUGH:
+            selection.rough.append(mask_id)
+        
+        # Remove duplicates
+        selection.greens = list(set(selection.greens))
+        selection.tees = list(set(selection.tees))
+        selection.fairways = list(set(selection.fairways))
+        selection.bunkers = list(set(selection.bunkers))
+        selection.water = list(set(selection.water))
+        selection.rough = list(set(selection.rough))
+        
+        logger.info(f"Generated mask {mask_id} with area {mask_data.area}")
+        return mask_data
+    
     def get_all_masks(self) -> List[MaskData]:
         """Get all generated masks."""
         return list(self.generated_masks.values())

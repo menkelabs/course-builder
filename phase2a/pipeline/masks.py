@@ -120,6 +120,367 @@ class MaskGenerator:
         
         logger.info("SAM model loaded successfully")
     
+    def _refine_mask_by_color(
+        self,
+        image: np.ndarray,
+        mask: np.ndarray,
+        sample_points: List[tuple],
+        color_tolerance: float = 30.0,
+    ) -> np.ndarray:
+        """
+        Refine a mask by keeping only pixels with similar color to sample points,
+        and only the connected region containing the center point.
+        
+        Args:
+            image: RGB image (H, W, 3)
+            mask: Binary mask to refine
+            sample_points: List of (x, y) points to sample color from
+            color_tolerance: Maximum color distance (in LAB space) to include
+            
+        Returns:
+            Refined binary mask
+        """
+        from skimage import color as skcolor
+        from scipy import ndimage
+        
+        height, width = image.shape[:2]
+        
+        # Convert image to LAB color space (better for perceptual color difference)
+        image_lab = skcolor.rgb2lab(image)
+        
+        # Sample colors from the center region (inside drawn outline)
+        sample_colors = []
+        center_x, center_y = None, None
+        for i, (x, y) in enumerate(sample_points):
+            x, y = int(x), int(y)
+            if 0 <= x < width and 0 <= y < height:
+                sample_colors.append(image_lab[y, x])
+                if i == 0:  # First point is center
+                    center_x, center_y = x, y
+        
+        if len(sample_colors) == 0:
+            return mask
+        
+        # Calculate mean color of sampled region
+        mean_color = np.mean(sample_colors, axis=0)
+        
+        # For each pixel in the mask, check color distance
+        color_mask = np.zeros_like(mask)
+        
+        # Get all mask pixel coordinates
+        mask_ys, mask_xs = np.where(mask)
+        
+        for y, x in zip(mask_ys, mask_xs):
+            pixel_lab = image_lab[y, x]
+            # Euclidean distance in LAB space
+            color_dist = np.sqrt(np.sum((pixel_lab - mean_color) ** 2))
+            
+            if color_dist <= color_tolerance:
+                color_mask[y, x] = True
+        
+        # Keep only the connected component containing the center point
+        # This removes disjoint areas with similar color
+        if center_x is not None and center_y is not None:
+            labeled_array, num_features = ndimage.label(color_mask)
+            if num_features > 0 and color_mask[center_y, center_x]:
+                center_label = labeled_array[center_y, center_x]
+                refined_mask = (labeled_array == center_label)
+            else:
+                # Center not in mask, find largest component
+                if num_features > 0:
+                    component_sizes = ndimage.sum(color_mask, labeled_array, range(1, num_features + 1))
+                    largest_label = np.argmax(component_sizes) + 1
+                    refined_mask = (labeled_array == largest_label)
+                else:
+                    refined_mask = color_mask
+        else:
+            refined_mask = color_mask
+        
+        logger.debug(f"Color refinement: {np.sum(mask)} -> {np.sum(refined_mask)} pixels "
+                    f"(tolerance={color_tolerance}, connected component)")
+        
+        return refined_mask
+    
+    def _smooth_mask_edges(
+        self,
+        mask: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert mask to a smooth polygon that contains all mask pixels.
+        
+        Creates a clean polygon boundary (not jagged pixels) that
+        encompasses the entire color-determined mask area.
+        
+        Args:
+            mask: Binary mask
+            
+        Returns:
+            Smoothed binary mask with clean polygon boundary
+        """
+        import cv2
+        
+        height, width = mask.shape
+        image_scale = max(width, height) / 1000.0
+        
+        mask_uint8 = mask.astype(np.uint8) * 255
+        
+        # Find contours of the mask
+        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if len(contours) == 0:
+            return mask
+        
+        # Get the largest contour
+        largest_contour = max(contours, key=cv2.contourArea)
+        
+        # Create convex hull to get smooth boundary containing all pixels
+        hull = cv2.convexHull(largest_contour)
+        
+        # If the shape is not convex (like a tee box), use approxPolyDP with small epsilon
+        # to create a smooth polygon that follows the shape but with clean edges
+        epsilon = max(1.0, 2.0 * image_scale)  # Small epsilon for accuracy
+        smoothed_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+        
+        # Dilate the contour slightly to ensure all original pixels are inside
+        # Then create the polygon
+        final_mask = np.zeros((height, width), dtype=np.uint8)
+        cv2.fillPoly(final_mask, [smoothed_contour], 255)
+        
+        # Ensure all original mask pixels are included
+        # If any original pixels are outside, use the hull instead
+        original_pixels = np.sum(mask)
+        covered_pixels = np.sum((final_mask > 0) & mask)
+        
+        if covered_pixels < original_pixels * 0.98:  # Less than 98% coverage
+            # Use convex hull to guarantee all pixels are inside
+            cv2.fillPoly(final_mask, [hull], 255)
+            logger.debug(f"Using convex hull (coverage was {100*covered_pixels/original_pixels:.0f}%)")
+        
+        logger.debug(f"Polygon smoothing: {np.sum(mask)} -> {np.sum(final_mask > 0)} pixels")
+        
+        return final_mask > 0
+    
+    def generate_from_outline(
+        self,
+        image: np.ndarray,
+        outline_points: List[tuple],  # List of (x, y) points from drawn outline
+        color_tolerance: float = 6.0,  # Color tolerance in LAB space (lower = stricter)
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask from a drawn outline (circle/polygon).
+        
+        The outline provides hints to SAM, then the mask is refined by color:
+        1. SAM generates candidate mask from outline hints
+        2. Mask is clipped to only include pixels with similar color to the drawn area
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format
+            outline_points: List of (x, y) coordinates forming the drawn outline
+            color_tolerance: Max color distance in LAB space (lower = stricter)
+            
+        Returns:
+            MaskData object or None if generation fails
+        """
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form an outline")
+            return None
+        
+        self._load_model()
+        
+        height, width = image.shape[:2]
+        
+        # Convert outline points to integers and clamp to image bounds
+        xs = [int(max(0, min(width - 1, p[0]))) for p in outline_points]
+        ys = [int(max(0, min(height - 1, p[1]))) for p in outline_points]
+        
+        # Calculate center point
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        # Sample points along the outline (use every Nth point, max 15 points)
+        num_points = min(15, len(outline_points))
+        step = max(1, len(outline_points) // num_points)
+        sampled_indices = list(range(0, len(outline_points), step))[:num_points]
+        
+        # Create point prompts: center + sampled outline points
+        # All labeled as foreground (1)
+        input_points = [[center_x, center_y]]
+        input_labels = [1]  # Center is foreground
+        
+        for i in sampled_indices:
+            input_points.append([xs[i], ys[i]])
+            input_labels.append(1)  # Outline points are foreground
+        
+        input_points = np.array(input_points)
+        input_labels = np.array(input_labels)
+        
+        # Set image for predictor
+        self._predictor.set_image(image)
+        
+        # Strategy 1: Try with just points (no box) - let SAM find natural boundaries
+        masks_no_box, scores_no_box, _ = self._predictor.predict(
+            point_coords=input_points,
+            point_labels=input_labels,
+            multimask_output=True,
+        )
+        
+        # Strategy 2: Try with bounding box (small padding - outline is the boundary hint)
+        box_width = max(xs) - min(xs)
+        box_height = max(ys) - min(ys)
+        padding_x = max(10, int(box_width * 0.15))  # Small padding - 15% or 10px min
+        padding_y = max(10, int(box_height * 0.15))  # Small padding - 15% or 10px min
+        
+        box_x0 = max(0, min(xs) - padding_x)
+        box_y0 = max(0, min(ys) - padding_y)
+        box_x1 = min(width, max(xs) + padding_x)
+        box_y1 = min(height, max(ys) + padding_y)
+        box = np.array([box_x0, box_y0, box_x1, box_y1])
+        
+        masks_with_box, scores_with_box, _ = self._predictor.predict(
+            point_coords=input_points,
+            point_labels=input_labels,
+            box=box,
+            multimask_output=True,
+        )
+        
+        # Combine all masks and pick the best one
+        all_masks = list(masks_no_box) + list(masks_with_box)
+        all_scores = list(scores_no_box) + list(scores_with_box)
+        
+        if len(all_masks) == 0:
+            return None
+        
+        # Calculate the area of the drawn outline (approximate)
+        outline_area = box_width * box_height
+        
+        # Score masks: prefer ones that closely match the drawn outline
+        # The outline represents the BOUNDARY the user wants, not interior points
+        best_idx = None
+        best_combined_score = -1
+        
+        for i, (mask, sam_score) in enumerate(zip(all_masks, all_scores)):
+            mask_area = np.sum(mask)
+            
+            # 1. Coverage: outline points should be inside the mask
+            points_inside = sum(1 for px, py in zip(xs, ys) if mask[py, px])
+            coverage = points_inside / len(xs) if len(xs) > 0 else 0
+            
+            # 2. Size match: penalize masks much larger than the drawn outline
+            # We want the mask to be close to the size of what was drawn
+            size_ratio = mask_area / outline_area if outline_area > 0 else 1.0
+            if size_ratio <= 1.5:
+                # Mask is same size or smaller - good
+                size_score = 1.0
+            elif size_ratio <= 2.0:
+                # Mask is up to 2x larger - slight penalty
+                size_score = 0.8
+            elif size_ratio <= 3.0:
+                # Mask is up to 3x larger - moderate penalty
+                size_score = 0.5
+            else:
+                # Mask is much larger than drawn - heavy penalty
+                size_score = 0.2
+            
+            # 3. Boundary alignment: check if outline points are near the mask edge
+            # For each outline point inside the mask, check if it's close to a non-mask pixel
+            edge_distance = 8  # pixels
+            points_near_edge = 0
+            for px, py in zip(xs, ys):
+                if not mask[py, px]:
+                    continue
+                # Check if any pixel within edge_distance is outside the mask
+                near_edge = False
+                for dy in range(-edge_distance, edge_distance + 1):
+                    for dx in range(-edge_distance, edge_distance + 1):
+                        ny, nx = py + dy, px + dx
+                        if 0 <= ny < height and 0 <= nx < width:
+                            if not mask[ny, nx]:
+                                near_edge = True
+                                break
+                    if near_edge:
+                        break
+                if near_edge:
+                    points_near_edge += 1
+            
+            edge_ratio = points_near_edge / max(1, points_inside) if points_inside > 0 else 0
+            
+            # Combined score: coverage + size match + boundary alignment
+            # Weight: 30% SAM score, 25% coverage, 25% size match, 20% boundary alignment
+            combined = (0.30 * float(sam_score) + 
+                       0.25 * coverage + 
+                       0.25 * size_score + 
+                       0.20 * edge_ratio)
+            
+            logger.debug(f"Mask {i}: sam={sam_score:.2f}, coverage={coverage:.2f}, "
+                        f"size_ratio={size_ratio:.1f}, size_score={size_score:.2f}, "
+                        f"edge_ratio={edge_ratio:.2f}, combined={combined:.3f}")
+            
+            if combined > best_combined_score:
+                best_combined_score = combined
+                best_idx = i
+        
+        mask = all_masks[best_idx]
+        score = float(all_scores[best_idx])
+        
+        # CRITICAL: Refine mask by color - only keep pixels with similar color to drawn area
+        # Sample colors from inside the drawn outline (center + some outline points)
+        sample_points = [(center_x, center_y)]
+        # Add some points from inside the outline (not on the edge)
+        for i in range(0, len(xs), max(1, len(xs) // 5)):
+            # Move points slightly toward center
+            px = int(xs[i] * 0.7 + center_x * 0.3)
+            py = int(ys[i] * 0.7 + center_y * 0.3)
+            sample_points.append((px, py))
+        
+        original_area = np.sum(mask)
+        mask = self._refine_mask_by_color(image, mask, sample_points, color_tolerance)
+        refined_area = np.sum(mask)
+        
+        logger.info(f"Color refinement: {original_area} -> {refined_area} pixels "
+                   f"({100*refined_area/original_area:.0f}% retained)")
+        
+        # Smooth edges to remove jagged pixel boundaries (auto-scales to image size)
+        mask = self._smooth_mask_edges(mask)
+        smoothed_area = np.sum(mask)
+        
+        logger.info(f"Edge smoothing: {refined_area} -> {smoothed_area} pixels")
+        
+        # Convert to MaskData
+        mask_area = int(np.sum(mask))
+        if mask_area < self.min_mask_region_area:
+            logger.debug(f"Generated mask too small after color refinement ({mask_area} < {self.min_mask_region_area})")
+            return None
+        
+        # Calculate bounding box
+        y_coords, x_coords = np.where(mask)
+        if len(y_coords) == 0:
+            return None
+        
+        bbox = (
+            int(x_coords.min()),
+            int(y_coords.min()),
+            int(x_coords.max() - x_coords.min()),
+            int(y_coords.max() - y_coords.min()),
+        )
+        
+        mask_data = MaskData(
+            id=f"outline_mask_{center_x}_{center_y}",
+            mask=mask,
+            area=mask_area,
+            bbox=bbox,
+            predicted_iou=score,
+            stability_score=score,
+        )
+        
+        # Calculate outline coverage for logging
+        points_inside = sum(1 for px, py in zip(xs, ys) if mask[py, px])
+        coverage = points_inside / len(xs) if len(xs) > 0 else 0
+        
+        logger.info(f"Generated mask from outline: area={mask_area}, score={score:.3f}, "
+                   f"coverage={coverage:.1%}, center=({center_x},{center_y}), "
+                   f"outline_bounds=({min(xs)},{min(ys)})-({max(xs)},{max(ys)})")
+        return mask_data
+    
     def generate_from_point(
         self,
         image: np.ndarray,
@@ -128,14 +489,16 @@ class MaskGenerator:
         box_size: Optional[int] = None,  # Optional bounding box size to constrain search
     ) -> Optional[MaskData]:
         """
-        Generate a mask from a point prompt, growing outward from the point.
+        Generate a mask from a single point prompt.
+        
+        For better results, consider using generate_from_outline() which allows
+        drawing an outline to provide SAM with more context.
         
         Args:
             image: Input image as numpy array (H, W, 3) in RGB format
             point: Point coordinates (x, y) in image space
             label: Point label (1 = foreground, 0 = background)
             box_size: Optional bounding box size (pixels) to constrain initial search area.
-                     If None, uses adaptive size based on image dimensions.
             
         Returns:
             MaskData object or None if generation fails
@@ -157,148 +520,36 @@ class MaskGenerator:
         input_point = np.array([[x, y]])
         input_label = np.array([label])
         
-        # Optionally add a bounding box constraint to focus on local area
-        # This helps SAM grow outward from the point rather than finding distant objects
-        box = None
-        if box_size is None:
-            # Adaptive box size: use ~5% of image dimension, but at least 100px
-            box_size = max(100, min(width, height) // 20)
-        
-        # Try multiple approaches to find the best mask that captures texture/color boundaries
-        all_masks = []
-        all_scores = []
-        all_logits = []
-        
-        # Strategy 1: Try with progressively larger boxes to capture full features
-        box_sizes_to_try = []
-        if box_size is not None:
-            box_sizes_to_try = [box_size]
-        elif self.point_mask_box_size is not None:
-            box_sizes_to_try = [self.point_mask_box_size]
-        else:
-            # Try multiple box sizes: small (local), medium (feature), large (context)
-            base_size = max(200, min(width, height) // 15)  # Larger base size
-            box_sizes_to_try = [
-                base_size,           # Local area
-                base_size * 2,        # Feature area
-                base_size * 4,        # Context area
-            ]
-        
-        # Try with different box sizes
-        for box_size_try in box_sizes_to_try:
-            box_half = box_size_try // 2
-            box_x0 = max(0, x - box_half)
-            box_y0 = max(0, y - box_half)
-            box_x1 = min(width, x + box_half)
-            box_y1 = min(height, y + box_half)
-            box = np.array([box_x0, box_y0, box_x1, box_y1])
-            
-            masks_box, scores_box, logits_box = self._predictor.predict(
-                point_coords=input_point,
-                point_labels=input_label,
-                box=box,
-                multimask_output=True,
-            )
-            
-            if len(masks_box) > 0:
-                all_masks.extend(masks_box)
-                all_scores.extend(scores_box)
-                all_logits.extend(logits_box)
-        
-        # Strategy 2: Also try without box constraint to capture larger features
-        masks_no_box, scores_no_box, logits_no_box = self._predictor.predict(
+        # Simple approach: just use the point without box constraint
+        # Let SAM decide the best segmentation
+        masks, scores, logits = self._predictor.predict(
             point_coords=input_point,
             point_labels=input_label,
             multimask_output=True,
         )
         
-        if len(masks_no_box) > 0:
-            all_masks.extend(masks_no_box)
-            all_scores.extend(scores_no_box)
-            all_logits.extend(logits_no_box)
-        
-        # Use all collected masks
-        if len(all_masks) == 0:
-            return None
-        
-        masks = all_masks
-        scores = np.array(all_scores)
-        
         if len(masks) == 0:
             return None
         
-        # Select mask that best captures texture/color boundaries
-        # Consider: IoU score, proximity to point, and boundary quality
-        mask_areas = [np.sum(m) for m in masks]
-        point_distances = []
-        boundary_scores = []  # Measure of how well mask follows boundaries
+        # Select mask where the click point is inside and has highest score
+        best_idx = None
+        best_score = -1
         
-        for mask in masks:
-            # Find centroid of mask
-            y_coords, x_coords = np.where(mask)
-            if len(y_coords) > 0:
-                centroid_x = x_coords.mean()
-                centroid_y = y_coords.mean()
-                # Distance from click point to mask centroid
-                dist = np.sqrt((centroid_x - x)**2 + (centroid_y - y)**2)
-                point_distances.append(dist)
-                
-                # Check if point is inside mask (good sign)
-                point_inside = mask[int(y), int(x)] if 0 <= int(y) < height and 0 <= int(x) < width else False
-                
-                # Estimate boundary quality: masks with good boundaries have
-                # reasonable area (not too small, not too large)
-                # and the point should be inside or very close
-                area = len(y_coords)  # Calculate area from coordinates
-                reasonable_size = 1000 <= area <= (width * height * 0.1)  # 0.1% to 10% of image
-                boundary_quality = 1.0 if (point_inside or dist < 50) and reasonable_size else 0.5
-                boundary_scores.append(boundary_quality)
-            else:
-                point_distances.append(float('inf'))
-                boundary_scores.append(0.0)
+        for i, (mask, score) in enumerate(zip(masks, scores)):
+            # Check if click point is inside this mask
+            if mask[int(y), int(x)]:
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
         
-        # Combined scoring: prioritize masks that capture full features
-        # Weight: 50% IoU score, 25% proximity, 25% boundary quality
-        combined_scores = []
-        for i in range(len(masks)):
-            score = float(scores[i])
-            area = mask_areas[i]
-            dist = point_distances[i]
-            boundary = boundary_scores[i]
-            
-            # Normalize distance (use image diagonal as reference)
-            max_dist = np.sqrt(width**2 + height**2)
-            normalized_dist = dist / max_dist if max_dist > 0 else 1.0
-            
-            # Prefer masks that:
-            # 1. Have high IoU (good segmentation quality)
-            # 2. Are reasonably close to the point (not distant objects)
-            # 3. Have good boundary quality (capture full features, point inside)
-            # 4. Have reasonable size (not tiny, not huge)
-            
-            # Size bonus: prefer medium-sized masks that capture full features
-            # Ideal size is around 0.5-2% of image area
-            ideal_area = (width * height) * 0.01  # 1% of image
-            size_ratio = area / ideal_area if ideal_area > 0 else 1.0
-            if 0.5 <= size_ratio <= 2.0:
-                size_bonus = 1.0
-            elif size_ratio < 0.5:
-                size_bonus = size_ratio * 2  # Penalize too small
-            else:
-                size_bonus = max(0.5, 2.0 / size_ratio)  # Penalize too large
-            
-            combined = (0.5 * score + 
-                       0.25 * (1.0 - min(1.0, normalized_dist * 2)) +  # Proximity (less penalty)
-                       0.15 * boundary +
-                       0.10 * size_bonus)
-            combined_scores.append(combined)
+        # If no mask contains the point, fall back to highest score
+        if best_idx is None:
+            best_idx = np.argmax(scores)
         
-        best_idx = np.argmax(combined_scores)
         mask = masks[best_idx]
         score = float(scores[best_idx])
         
-        logger.debug(f"Selected mask {best_idx}: score={score:.3f}, area={mask_areas[best_idx]}, "
-                    f"dist={point_distances[best_idx]:.1f}, combined={combined_scores[best_idx]:.3f}")
+        logger.debug(f"Selected mask {best_idx}: score={score:.3f}")
         
         # Convert to MaskData
         mask_area = int(np.sum(mask))

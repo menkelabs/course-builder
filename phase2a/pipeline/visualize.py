@@ -153,8 +153,134 @@ class InteractiveMaskSelector:
         self._image_artist = None  # Cache image artist for efficient updates
         self._last_generated_mask_id = None  # Track last generated mask for undo
         
+        # Drawing mode state
+        self._drawing = False
+        self._draw_points = []  # Points collected during drawing
+        self._draw_line = None  # Line artist for drawing visualization
+        
+    def _is_toolbar_active(self):
+        """Check if pan or zoom tool is active in the toolbar."""
+        try:
+            toolbar = self.fig.canvas.toolbar
+            if toolbar is not None:
+                # Check for pan or zoom mode
+                mode = getattr(toolbar, 'mode', '')
+                if mode in ('pan/zoom', 'pan', 'zoom', 'zoom rect'):
+                    return True
+                # Also check _active for some backends
+                active = getattr(toolbar, '_active', None)
+                if active in ('PAN', 'ZOOM'):
+                    return True
+        except:
+            pass
+        return False
+    
+    def _on_press(self, event):
+        """Handle mouse button press - start drawing."""
+        # Don't draw if pan/zoom tool is active
+        if self._is_toolbar_active():
+            return
+        
+        if hasattr(event, 'inaxes') and event.inaxes != self.ax:
+            return
+        
+        if event.button != 1:  # Only left mouse button
+            return
+        
+        if event.xdata is None or event.ydata is None:
+            return
+        
+        # Start drawing
+        self._drawing = True
+        self._draw_points = [(event.xdata, event.ydata)]
+        
+        # Create line artist for drawing visualization
+        if self._draw_line is not None:
+            self._draw_line.remove()
+        self._draw_line, = self.ax.plot([], [], 'r-', linewidth=2, alpha=0.7)
+        
+    def _on_motion(self, event):
+        """Handle mouse motion - collect drawing points."""
+        if not self._drawing:
+            return
+        
+        # Cancel drawing if toolbar became active
+        if self._is_toolbar_active():
+            self._drawing = False
+            if self._draw_line is not None:
+                self._draw_line.remove()
+                self._draw_line = None
+            self._draw_points = []
+            return
+        
+        if event.xdata is None or event.ydata is None:
+            return
+        
+        if event.inaxes != self.ax:
+            return
+        
+        # Add point to drawing
+        self._draw_points.append((event.xdata, event.ydata))
+        
+        # Update line visualization
+        if self._draw_line is not None and len(self._draw_points) > 1:
+            xs = [p[0] for p in self._draw_points]
+            ys = [p[1] for p in self._draw_points]
+            self._draw_line.set_data(xs, ys)
+            self.fig.canvas.draw_idle()
+    
+    def _on_release(self, event):
+        """Handle mouse button release - finish drawing and generate mask."""
+        if not self._drawing:
+            return
+        
+        self._drawing = False
+        
+        # Need at least a few points to form an outline
+        if len(self._draw_points) < 5:
+            logger.info("Draw a larger outline (click and drag)")
+            if self._draw_line is not None:
+                self._draw_line.remove()
+                self._draw_line = None
+            self.fig.canvas.draw_idle()
+            return
+        
+        # Check if this is a point-based selector with outline support
+        if hasattr(self.selector, 'draw_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
+            # Draw-to-mask mode: generate mask from outline
+            mask_data = self.selector.draw_to_mask(
+                self._draw_points,
+                self._current_hole,
+                self._current_feature_type
+            )
+            if mask_data:
+                # Track this as the last generated mask for undo
+                self._last_generated_mask_id = mask_data.id
+                # Add to selected masks
+                if mask_data.id not in self.selected_mask_ids:
+                    self.selected_mask_ids.append(mask_data.id)
+                logger.info(f"Generated mask from outline: {mask_data.id}")
+            else:
+                logger.warning("Failed to generate mask from outline")
+        
+        # Clear drawing visualization
+        if self._draw_line is not None:
+            self._draw_line.remove()
+            self._draw_line = None
+        
+        # Clear draw points
+        self._draw_points = []
+        
+        # Redraw to show the new mask
+        self._redraw()
+    
     def _on_click(self, event):
-        """Handle mouse click events."""
+        """Handle mouse click events (single click fallback)."""
+        # This is now a fallback - drawing is preferred
+        # Only trigger if not in drawing mode
+        if self._drawing:
+            return
+        
         # Check if button was clicked
         if hasattr(event, 'inaxes') and event.inaxes != self.ax:
             return
@@ -163,10 +289,7 @@ class InteractiveMaskSelector:
             return
         
         # Get click coordinates in image space
-        # event.xdata and event.ydata are already in data coordinates (image coordinates)
-        # This means they work correctly even when zoomed/panned
         if event.inaxes == self.ax:
-            # Ensure we have valid data coordinates (None if clicked outside image bounds)
             if event.xdata is None or event.ydata is None:
                 return
             
@@ -179,30 +302,26 @@ class InteractiveMaskSelector:
                 logger.warning(f"Click outside image bounds: ({x}, {y})")
                 return
             
-            # Check if this is a point-based selector (has click_to_mask method)
+            # For point-based selector, single click is now just a fallback
+            # Drawing is the preferred method
             if hasattr(self.selector, 'click_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
-                # Point-based mode: generate mask from click
                 mask_data = self.selector.click_to_mask(
                     x, y,
                     self._current_hole,
                     self._current_feature_type
                 )
                 if mask_data:
-                    # Track this as the last generated mask for undo
                     self._last_generated_mask_id = mask_data.id
-                    # Add to selected masks
                     if mask_data.id not in self.selected_mask_ids:
                         self.selected_mask_ids.append(mask_data.id)
-                    # Update display
                     self._redraw()
                     if self.click_callback:
                         self.click_callback(mask_data.id)
             else:
-                # Original mask selection mode: find existing mask
+                # Original mask selection mode
                 mask_id = self.selector.get_mask_at_point(x, y)
                 
                 if mask_id:
-                    # Toggle selection
                     if mask_id in self.selected_mask_ids:
                         self.selected_mask_ids.remove(mask_id)
                         logger.info(f"Deselected mask: {mask_id}")
@@ -210,10 +329,8 @@ class InteractiveMaskSelector:
                         self.selected_mask_ids.append(mask_id)
                         logger.info(f"Selected mask: {mask_id}")
                     
-                    # Update display
                     self._redraw()
                     
-                    # Call callback if provided
                     if self.click_callback:
                         self.click_callback(mask_id)
                 else:
@@ -410,7 +527,7 @@ class InteractiveMaskSelector:
                             bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
             
             # Add keyboard shortcuts info
-            shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Undo last"
+            shortcuts_text = "Draw outline to mark | Scroll: Zoom | Enter/Space: Done | Esc: Undo last"
             self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
                         transform=self.ax.transAxes,
                         fontsize=10, horizontalalignment='center',
@@ -466,7 +583,10 @@ class InteractiveMaskSelector:
         self.done_button.on_clicked(self._on_done)
         
         # Connect event handlers
-        self.fig.canvas.mpl_connect('button_press_event', self._on_click)
+        # Drawing mode: press to start, motion to draw, release to finish
+        self.fig.canvas.mpl_connect('button_press_event', self._on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self._on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self._on_release)
         self.fig.canvas.mpl_connect('key_press_event', self._on_key)
         
         # Set window title (Qt uses setWindowTitle, Tk uses set_window_title)

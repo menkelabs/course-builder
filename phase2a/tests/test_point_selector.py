@@ -173,6 +173,76 @@ class TestPointBasedSelector:
         selection = selector.get_selection_for_hole(1)
         assert len(selection.greens) == 2
     
+    def test_draw_to_mask_green(self, sample_image, mock_mask_generator):
+        """Test generating mask from drawn outline."""
+        # Create mock that returns a mask for outline
+        mock_mask = MaskData(
+            id="outline_mask",
+            mask=np.ones((200, 200), dtype=bool),
+            area=1000,
+            bbox=(50, 50, 100, 100),
+            predicted_iou=0.95,
+            stability_score=0.95,
+        )
+        mock_mask_generator.generate_from_outline = Mock(return_value=mock_mask)
+        
+        selector = PointBasedSelector(sample_image, mock_mask_generator)
+        
+        # Simulate drawing a circle (list of points)
+        outline_points = [(60, 75), (75, 60), (90, 75), (75, 90), (60, 75)]
+        
+        result = selector.draw_to_mask(outline_points, hole=1, feature_type=FeatureType.GREEN)
+        
+        assert result is not None
+        assert "green" in result.id
+        
+        # Verify it was stored
+        assert len(selector.generated_masks) == 1
+        
+        # Verify selection
+        selection = selector.get_selection_for_hole(1)
+        assert len(selection.greens) == 1
+    
+    def test_draw_to_mask_multiple_features(self, sample_image, mock_mask_generator):
+        """Test drawing multiple features."""
+        mock_mask = MaskData(
+            id="outline_mask",
+            mask=np.ones((200, 200), dtype=bool),
+            area=1000,
+            bbox=(50, 50, 100, 100),
+            predicted_iou=0.95,
+            stability_score=0.95,
+        )
+        mock_mask_generator.generate_from_outline = Mock(return_value=mock_mask)
+        
+        selector = PointBasedSelector(sample_image, mock_mask_generator)
+        
+        # Draw green
+        green_outline = [(60, 75), (75, 60), (90, 75), (75, 90)]
+        green_mask = selector.draw_to_mask(green_outline, hole=1, feature_type=FeatureType.GREEN)
+        
+        # Draw fairway
+        fairway_outline = [(100, 100), (150, 100), (150, 150), (100, 150)]
+        fairway_mask = selector.draw_to_mask(fairway_outline, hole=1, feature_type=FeatureType.FAIRWAY)
+        
+        assert green_mask is not None
+        assert fairway_mask is not None
+        
+        selection = selector.get_selection_for_hole(1)
+        assert len(selection.greens) == 1
+        assert len(selection.fairways) == 1
+    
+    def test_draw_to_mask_too_few_points(self, sample_image, mock_mask_generator):
+        """Test that drawing with too few points fails gracefully."""
+        selector = PointBasedSelector(sample_image, mock_mask_generator)
+        
+        # Only 2 points - not enough to form an outline
+        outline_points = [(60, 75), (90, 75)]
+        
+        result = selector.draw_to_mask(outline_points, hole=1, feature_type=FeatureType.GREEN)
+        
+        assert result is None
+    
     def test_get_all_masks(self, sample_image, mock_mask_generator):
         """Test getting all generated masks."""
         selector = PointBasedSelector(sample_image, mock_mask_generator)
@@ -338,6 +408,57 @@ class TestMaskGeneratorPointGeneration:
         assert mask_data.area > 0
         assert mask_data.predicted_iou > 0
         assert mask_data.stability_score > 0
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / "resources" / "Pictatinny_B.jpg").exists(),
+        reason="Resource image not available for SAM testing"
+    )
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth").exists(),
+        reason="SAM checkpoint not available"
+    )
+    def test_generate_from_outline_with_sam(self):
+        """Test generating mask from drawn outline using actual SAM model."""
+        from PIL import Image
+        from phase2a.pipeline.masks import MaskGenerator
+        
+        # Load test image
+        image_path = Path(__file__).parent.parent / "resources" / "Pictatinny_B.jpg"
+        checkpoint_path = Path(__file__).parent.parent.parent / "checkpoints" / "sam_vit_h_4b8939.pth"
+        
+        if not image_path.exists() or not checkpoint_path.exists():
+            pytest.skip("Required files not available")
+        
+        image = np.array(Image.open(image_path).convert("RGB"))
+        height, width = image.shape[:2]
+        
+        # Create generator
+        generator = MaskGenerator(
+            checkpoint_path=str(checkpoint_path),
+            device="cpu",
+        )
+        
+        # Draw a circle outline in the center of the image
+        center_x, center_y = width // 2, height // 2
+        radius = min(width, height) // 10
+        
+        # Create circle points
+        import math
+        outline_points = []
+        for i in range(20):
+            angle = 2 * math.pi * i / 20
+            px = center_x + int(radius * math.cos(angle))
+            py = center_y + int(radius * math.sin(angle))
+            outline_points.append((px, py))
+        
+        # Generate mask from outline
+        mask_data = generator.generate_from_outline(image, outline_points)
+        
+        assert mask_data is not None
+        assert mask_data.mask.shape == image.shape[:2]
+        assert mask_data.area > 0
+        assert mask_data.predicted_iou > 0
+        assert "outline_mask" in mask_data.id
     
     def test_generate_from_point_invalid_point(self, sample_image):
         """Test generating mask with invalid point coordinates."""
