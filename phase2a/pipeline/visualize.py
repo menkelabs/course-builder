@@ -508,8 +508,10 @@ class InteractiveMaskSelector:
             while not self._done_pressed:
                 plt.pause(0.1)  # Small pause to allow event processing
             
-            plt.close(self.fig)
+            # Don't close the figure - just reset the done flag
+            # This allows the same window to be reused for the next feature
             self._done_pressed = False  # Reset for next use
+            # Note: Figure is NOT closed, caller should handle cleanup if needed
         else:
             plt.show(block=False)
     

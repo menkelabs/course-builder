@@ -613,11 +613,15 @@ def _interactive_point_mode(console, selector, image_array):
     """Interactive point-based selection using matplotlib clicking."""
     from .pipeline.visualize import InteractiveMaskSelector
     from .pipeline.interactive import FeatureType
+    import matplotlib.pyplot as plt
     
     console.print("[cyan]Interactive Point Selection Mode[/cyan]")
     console.print("[dim]Click anywhere on the image to mark feature locations.[/dim]")
     console.print("[dim]SAM will automatically find the area around each click.[/dim]")
     console.print("[dim]Press Enter/Space or click 'Done' when finished with each feature.[/dim]\n")
+    
+    # Initialize shared interactive window (reused for all features)
+    interactive = None
     
     holes_to_process = list(range(1, 19))  # Holes 1-18
     
@@ -636,11 +640,22 @@ def _interactive_point_mode(console, selector, image_array):
             console.print("[dim]Click on the image where you see the {feature_name}. You can click multiple times.[/dim]")
             console.print("[dim]Press Enter/Space or click 'Done' when finished[/dim]")
             
-            # Create interactive selector
-            interactive = InteractiveMaskSelector(
-                selector,
-                title=f"Hole {hole} - Click on {feature_name} (SAM will find the area)",
-            )
+            # Create or reuse interactive selector
+            if interactive is None:
+                # First time - create the window
+                interactive = InteractiveMaskSelector(
+                    selector,
+                    title=f"Hole {hole} - Click on {feature_name} (SAM will find the area)",
+                )
+                interactive.show(block=False)  # Create window but don't block
+                # Give window time to render
+                import time
+                time.sleep(0.2)
+            else:
+                # Reuse existing window - just update title
+                interactive.title = f"Hole {hole} - Click on {feature_name} (SAM will find the area)"
+                if interactive.ax is not None:
+                    interactive.ax.set_title(interactive.title, fontsize=14, pad=20)
             
             # Set current hole and feature type for point-based generation
             interactive._current_hole = hole
@@ -660,9 +675,16 @@ def _interactive_point_mode(console, selector, image_array):
                 else:
                     existing = []
                 interactive.selected_mask_ids = existing.copy()
+            else:
+                interactive.selected_mask_ids = []
             
-            # Show interactive window (blocks until Done is pressed)
-            interactive.show(block=True)
+            # Reset done flag and redraw
+            interactive._done_pressed = False
+            interactive._redraw()
+            
+            # Wait for done signal
+            while not interactive._done_pressed:
+                plt.pause(0.1)  # Small pause to allow event processing
             
             # Get selected masks (already assigned via click_to_mask)
             selected_ids = interactive.get_selected_mask_ids()
@@ -671,6 +693,11 @@ def _interactive_point_mode(console, selector, image_array):
                 console.print(f"[green]✓ Marked {len(selected_ids)} {feature_name} location(s)[/green]")
             else:
                 console.print(f"[dim]No {feature_name} marked[/dim]")
+    
+    # Close window at the very end (after all holes/features are done)
+    if interactive is not None and interactive.fig is not None:
+        import matplotlib.pyplot as plt
+        plt.close(interactive.fig)
 
 
 def _interactive_click_mode(console, selector):
