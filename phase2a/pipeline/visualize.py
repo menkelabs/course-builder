@@ -108,9 +108,21 @@ class InteractiveMaskSelector:
             return
         
         # Get click coordinates in image space
+        # event.xdata and event.ydata are already in data coordinates (image coordinates)
+        # This means they work correctly even when zoomed/panned
         if event.inaxes == self.ax:
+            # Ensure we have valid data coordinates (None if clicked outside image bounds)
+            if event.xdata is None or event.ydata is None:
+                return
+            
             x = int(event.xdata)
             y = int(event.ydata)
+            
+            # Validate coordinates are within image bounds
+            image = self.selector.image
+            if x < 0 or x >= image.shape[1] or y < 0 or y >= image.shape[0]:
+                logger.warning(f"Click outside image bounds: ({x}, {y})")
+                return
             
             # Check if this is a point-based selector (has click_to_mask method)
             if hasattr(self.selector, 'click_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
@@ -188,9 +200,18 @@ class InteractiveMaskSelector:
         self.ax.clear()
         # Ensure image is in correct format for matplotlib (RGB, not BGR)
         # imshow expects RGB for uint8 arrays
-        self.ax.imshow(overlay)
+        # Set extent to ensure proper coordinate mapping when zoomed/panned
+        # extent=[left, right, bottom, top] in data coordinates
+        height, width = overlay.shape[:2]
+        self.ax.imshow(overlay, extent=[0, width, height, 0], origin='upper')
         self.ax.set_title(self.title, fontsize=14, pad=20)
-        self.ax.axis('off')
+        # Keep axis visible but minimal for zoom/pan to work properly
+        # The axis helps with coordinate transformation
+        self.ax.axis('on')
+        self.ax.set_facecolor('black')
+        # Set limits to match image dimensions for proper coordinate mapping
+        self.ax.set_xlim(0, width)
+        self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
         
         # Add mask ID labels at centroids
         for i, mask_data in enumerate(masks):
@@ -221,7 +242,7 @@ class InteractiveMaskSelector:
                         bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
         
         # Add keyboard shortcuts info
-        shortcuts_text = "Click masks to select | Enter/Space: Done | Esc: Clear"
+        shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Clear"
         self.ax.text(0.5, 0.02, shortcuts_text,
                     transform=self.ax.transAxes,
                     fontsize=10, horizontalalignment='center',
@@ -245,8 +266,13 @@ class InteractiveMaskSelector:
             # Original selector
             masks = list(self.selector.masks.values())
         
-        # Create figure with space for button
+        # Create figure with space for button and toolbar
         self.fig = plt.figure(figsize=(16, 13))
+        
+        # Enable navigation toolbar (zoom/pan) - this is enabled by default in matplotlib
+        # The toolbar allows zooming with mouse wheel and panning by dragging
+        # Click coordinates (event.xdata, event.ydata) are automatically in data coordinates
+        # so they remain accurate even when zoomed/panned
         
         # Main image axes
         self.ax = self.fig.add_axes([0, 0.05, 1, 0.93])  # Leave space at bottom for button
