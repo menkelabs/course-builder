@@ -409,8 +409,8 @@ class InteractiveMaskSelector:
                             fontsize=12, verticalalignment='top',
                             bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
             
-        # Add keyboard shortcuts info
-        shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Undo last"
+            # Add keyboard shortcuts info
+            shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Undo last"
             self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
                         transform=self.ax.transAxes,
                         fontsize=10, horizontalalignment='center',
