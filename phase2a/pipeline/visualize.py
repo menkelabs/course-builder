@@ -259,6 +259,10 @@ class InteractiveMaskSelector:
         
         overlay = create_mask_overlay(image, masks, self.selected_mask_ids)
         
+        # Save current zoom/pan state before clearing
+        current_xlim = self.ax.get_xlim() if self.ax is not None else None
+        current_ylim = self.ax.get_ylim() if self.ax is not None else None
+        
         self.ax.clear()
         # Ensure image is in correct format for matplotlib (RGB, not BGR)
         # imshow expects RGB for uint8 arrays
@@ -271,9 +275,26 @@ class InteractiveMaskSelector:
         # The axis helps with coordinate transformation
         self.ax.axis('on')
         self.ax.set_facecolor('black')
-        # Set limits to match image dimensions for proper coordinate mapping
-        self.ax.set_xlim(0, width)
-        self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
+        
+        # Restore zoom/pan state if it was set, otherwise use default limits
+        if current_xlim is not None and current_ylim is not None:
+            # Validate that saved limits are still within image bounds
+            xlim_valid = (0 <= current_xlim[0] <= width and 0 <= current_xlim[1] <= width and
+                         current_xlim[0] < current_xlim[1])
+            ylim_valid = (0 <= current_ylim[0] <= height and 0 <= current_ylim[1] <= height and
+                         current_ylim[0] > current_ylim[1])  # Inverted Y axis
+            
+            if xlim_valid and ylim_valid:
+                self.ax.set_xlim(current_xlim)
+                self.ax.set_ylim(current_ylim)
+            else:
+                # If saved limits are invalid, use default
+                self.ax.set_xlim(0, width)
+                self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
+        else:
+            # First time - set default limits to match image dimensions
+            self.ax.set_xlim(0, width)
+            self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
         
         # Add mask ID labels at centroids
         for i, mask_data in enumerate(masks):
