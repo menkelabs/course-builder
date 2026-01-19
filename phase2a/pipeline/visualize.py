@@ -237,7 +237,13 @@ class InteractiveMaskSelector:
             block: If True, blocks until done (via button/keyboard)
         """
         image = self.selector.image
-        masks = list(self.selector.masks.values())
+        # Get masks - either from selector.masks or from generated_masks
+        if hasattr(self.selector, 'generated_masks'):
+            # Point-based selector
+            masks = list(self.selector.generated_masks.values())
+        else:
+            # Original selector
+            masks = list(self.selector.masks.values())
         
         # Create figure with space for button
         self.fig = plt.figure(figsize=(16, 13))
