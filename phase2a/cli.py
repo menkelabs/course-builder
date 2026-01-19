@@ -483,6 +483,12 @@ def info():
     help="SAM model variant",
 )
 @click.option(
+    "--device",
+    type=click.Choice(["cuda", "cpu"]),
+    default="cuda",
+    help="Device to run SAM on (cuda or cpu)",
+)
+@click.option(
     "-v", "--verbose",
     is_flag=True,
     help="Enable verbose output",
@@ -493,6 +499,7 @@ def select(
     checkpoint: Path,
     selections: Optional[Path],
     model_type: str,
+    device: str,
     verbose: bool,
 ):
     """
@@ -533,7 +540,7 @@ def select(
         generator = MaskGenerator(
             model_type=model_type,
             checkpoint_path=str(checkpoint),
-            device="cuda",  # Use CUDA if available
+            device=device,
         )
         
         # Initialize point-based selector
