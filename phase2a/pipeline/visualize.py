@@ -151,6 +151,7 @@ class InteractiveMaskSelector:
         self.done_button = None
         self._done_pressed = False
         self._image_artist = None  # Cache image artist for efficient updates
+        self._last_generated_mask_id = None  # Track last generated mask for undo
         
     def _on_click(self, event):
         """Handle mouse click events."""
@@ -187,6 +188,8 @@ class InteractiveMaskSelector:
                     self._current_feature_type
                 )
                 if mask_data:
+                    # Track this as the last generated mask for undo
+                    self._last_generated_mask_id = mask_data.id
                     # Add to selected masks
                     if mask_data.id not in self.selected_mask_ids:
                         self.selected_mask_ids.append(mask_data.id)
@@ -238,13 +241,13 @@ class InteractiveMaskSelector:
         if xdata is None or ydata is None:
             return
         
-        # Zoom factor
+        # Zoom factor - make zoom more responsive
         if event.button == 'up':
-            # Zoom in
-            scale_factor = 0.9
+            # Zoom in (more aggressive)
+            scale_factor = 0.85
         elif event.button == 'down':
-            # Zoom out
-            scale_factor = 1.1
+            # Zoom out (more aggressive)
+            scale_factor = 1.15
         else:
             return
         
@@ -287,9 +290,41 @@ class InteractiveMaskSelector:
             if self.done_callback:
                 self.done_callback()
         elif event.key == 'escape':
-            # Escape = Clear selection
-            self.selected_mask_ids.clear()
-            self._redraw()
+            # Escape = Undo last generated mask (for point-based) or clear selection
+            if hasattr(self.selector, 'click_to_mask') and self._last_generated_mask_id:
+                # Point-based mode: remove last generated mask
+                mask_id = self._last_generated_mask_id
+                
+                # Remove from selected masks
+                if mask_id in self.selected_mask_ids:
+                    self.selected_mask_ids.remove(mask_id)
+                
+                # Remove from generated_masks
+                if hasattr(self.selector, 'generated_masks') and mask_id in self.selector.generated_masks:
+                    del self.selector.generated_masks[mask_id]
+                
+                # Remove from selections
+                if hasattr(self.selector, 'selections'):
+                    for hole, selection in self.selector.selections.items():
+                        if hasattr(selection, 'greens') and mask_id in selection.greens:
+                            selection.greens.remove(mask_id)
+                        if hasattr(selection, 'tees') and mask_id in selection.tees:
+                            selection.tees.remove(mask_id)
+                        if hasattr(selection, 'fairways') and mask_id in selection.fairways:
+                            selection.fairways.remove(mask_id)
+                        if hasattr(selection, 'bunkers') and mask_id in selection.bunkers:
+                            selection.bunkers.remove(mask_id)
+                
+                # Clear last generated mask tracking
+                self._last_generated_mask_id = None
+                
+                # Update display
+                self._redraw()
+                logger.info(f"Undid last mask generation: {mask_id}")
+            else:
+                # Fallback: clear all selections
+                self.selected_mask_ids.clear()
+                self._redraw()
     
     def _redraw(self):
         """Redraw the visualization with current selections."""
@@ -374,8 +409,8 @@ class InteractiveMaskSelector:
                             fontsize=12, verticalalignment='top',
                             bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
             
-            # Add keyboard shortcuts info
-            shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Clear"
+        # Add keyboard shortcuts info
+        shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Undo last"
             self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
                         transform=self.ax.transAxes,
                         fontsize=10, horizontalalignment='center',
