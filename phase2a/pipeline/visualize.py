@@ -193,12 +193,17 @@ class InteractiveMaskSelector:
         self.ax.axis('off')
         
         # Add mask ID labels at centroids
-        for mask_data in masks:
+        for i, mask_data in enumerate(masks):
             y_coords, x_coords = np.where(mask_data.mask)
             if len(y_coords) > 0:
                 centroid_x = int(x_coords.mean())
                 centroid_y = int(y_coords.mean())
-                mask_idx = self.selector._mask_id_to_index.get(mask_data.id, -1)
+                # Get mask index - support both InteractiveSelector and PointBasedSelector
+                if hasattr(self.selector, '_mask_id_to_index'):
+                    mask_idx = self.selector._mask_id_to_index.get(mask_data.id, i)
+                else:
+                    # For PointBasedSelector, use index in generated_masks
+                    mask_idx = i
                 is_selected = mask_data.id in self.selected_mask_ids
                 color = 'lime' if is_selected else 'white'
                 weight = 'bold' if is_selected else 'normal'

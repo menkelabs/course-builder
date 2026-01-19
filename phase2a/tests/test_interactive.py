@@ -431,3 +431,47 @@ class TestInteractiveSelectorIntegration:
         assert "centroid" in summary["mask_0000"]
         assert "area" in summary["mask_0000"]
         assert "bbox" in summary["mask_0000"]
+
+
+class TestPointBasedSelectorIntegration:
+    """Integration tests connecting point-based selection with interactive workflow."""
+    
+    def test_point_based_selector_import(self):
+        """Test that PointBasedSelector can be imported."""
+        from phase2a.pipeline.point_selector import PointBasedSelector
+        assert PointBasedSelector is not None
+    
+    def test_point_based_workflow_with_mock(self, sample_image):
+        """Test point-based workflow with mocked SAM."""
+        from phase2a.pipeline.point_selector import PointBasedSelector
+        from phase2a.pipeline.interactive import FeatureType
+        from unittest.mock import Mock
+        from phase2a.pipeline.masks import MaskData
+        
+        # Create mock generator
+        mock_generator = Mock()
+        
+        # Create a test mask
+        test_mask = np.zeros((200, 200), dtype=bool)
+        test_mask[70:90, 70:90] = True
+        
+        def mock_generate(point, image, label=1):
+            return MaskData(
+                id="test",
+                mask=test_mask,
+                area=400,
+                bbox=(70, 70, 20, 20),
+                predicted_iou=0.9,
+                stability_score=0.95,
+            )
+        
+        mock_generator.generate_from_point = Mock(side_effect=mock_generate)
+        
+        selector = PointBasedSelector(sample_image, mock_generator)
+        
+        # Test clicking
+        mask = selector.click_to_mask(75, 75, hole=1, feature_type=FeatureType.GREEN)
+        
+        assert mask is not None
+        assert len(selector.generated_masks) == 1
+        assert len(selector.get_selection_for_hole(1).greens) == 1
