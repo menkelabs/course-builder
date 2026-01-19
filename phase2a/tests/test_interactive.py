@@ -455,7 +455,7 @@ class TestPointBasedSelectorIntegration:
         test_mask = np.zeros((200, 200), dtype=bool)
         test_mask[70:90, 70:90] = True
         
-        def mock_generate(point, image, label=1):
+        def mock_generate(image, point, label=1):
             return MaskData(
                 id="test",
                 mask=test_mask,
