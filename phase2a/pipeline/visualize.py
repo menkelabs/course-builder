@@ -13,8 +13,13 @@ try:
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
     from matplotlib.widgets import Button
+    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
+    try:
+        from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk as NavigationToolbar
+    except ImportError:
+        NavigationToolbar = None
     MATPLOTLIB_AVAILABLE = False
 
 from .masks import MaskData
@@ -168,6 +173,63 @@ class InteractiveMaskSelector:
         if self.done_callback:
             self.done_callback()
     
+    def _on_scroll(self, event):
+        """Handle mouse wheel scroll for zooming."""
+        if event.inaxes != self.ax:
+            return
+        
+        # Get the current x and y limits
+        cur_xlim = self.ax.get_xlim()
+        cur_ylim = self.ax.get_ylim()
+        
+        # Get the event location in data coordinates
+        xdata = event.xdata
+        ydata = event.ydata
+        
+        if xdata is None or ydata is None:
+            return
+        
+        # Zoom factor
+        if event.button == 'up':
+            # Zoom in
+            scale_factor = 0.9
+        elif event.button == 'down':
+            # Zoom out
+            scale_factor = 1.1
+        else:
+            return
+        
+        # Calculate new limits centered on the mouse position
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        new_height = (cur_ylim[0] - cur_ylim[1]) * scale_factor  # Note: ylim is inverted
+        
+        # Center the zoom on the mouse position
+        relx = (xdata - cur_xlim[0]) / (cur_xlim[1] - cur_xlim[0])
+        rely = (ydata - cur_ylim[0]) / (cur_ylim[1] - cur_ylim[0])
+        
+        new_xlim = [xdata - new_width * relx, xdata + new_width * (1 - relx)]
+        new_ylim = [ydata + new_height * rely, ydata - new_height * (1 - rely)]  # Inverted
+        
+        # Apply limits but keep within image bounds
+        image = self.selector.image
+        height, width = image.shape[:2]
+        
+        # Clamp to image bounds
+        new_xlim[0] = max(0, min(new_xlim[0], width))
+        new_xlim[1] = max(0, min(new_xlim[1], width))
+        new_ylim[0] = max(0, min(new_ylim[0], height))
+        new_ylim[1] = max(0, min(new_ylim[1], height))
+        
+        # Ensure we don't zoom out beyond image bounds
+        if new_xlim[1] - new_xlim[0] > width:
+            new_xlim = [0, width]
+        if abs(new_ylim[1] - new_ylim[0]) > height:
+            new_ylim = [height, 0]
+        
+        self.ax.set_xlim(new_xlim)
+        self.ax.set_ylim(new_ylim)
+        self.fig.canvas.draw_idle()
+    
     def _on_key(self, event):
         """Handle keyboard events."""
         if event.key == 'enter' or event.key == ' ':
@@ -276,6 +338,10 @@ class InteractiveMaskSelector:
         
         # Main image axes
         self.ax = self.fig.add_axes([0, 0.05, 1, 0.93])  # Leave space at bottom for button
+        
+        # Enable mouse wheel zoom explicitly
+        # Connect scroll event for zoom
+        self.fig.canvas.mpl_connect('scroll_event', self._on_scroll)
         
         # Note: We don't need to show image here, _redraw() will do it
         # Just set up the axes and UI components first
