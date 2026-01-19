@@ -264,18 +264,21 @@ class SVGGenerator:
         
         layers_content = "\n".join(layers)
         
-        # Assemble SVG
+        # Assemble SVG with OPCD palette metadata
         svg = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
      width="{self.width}"
      height="{self.height}"
      viewBox="0 0 {self.width} {self.height}">
   <metadata>
-    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:RDF>
       <rdf:Description rdf:about="">
-        <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Golf Course SVG</dc:title>
-        <dc:description xmlns:dc="http://purl.org/dc/elements/1.1/">Generated with OPCD v4 palette</dc:description>
+        <dc:title>Golf Course SVG</dc:title>
+        <dc:description>Generated with OPCD v4 palette</dc:description>
+        <dc:subject>Golf Course Mapping</dc:subject>
       </rdf:Description>
     </rdf:RDF>
   </metadata>
