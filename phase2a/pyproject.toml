@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "phase2a"
 version = "0.1.0"
 description = "Automated satellite tracing for golf course feature extraction"
-readme = "../README.md"
+readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 keywords = ["golf", "satellite", "segmentation", "svg", "gis"]
@@ -63,6 +63,7 @@ Repository = "https://github.com/menkelabs/course-builder"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["phase2a*"]
 
 [tool.black]
 line-length = 88
