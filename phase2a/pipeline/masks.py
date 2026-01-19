@@ -55,6 +55,7 @@ class MaskGenerator:
         pred_iou_thresh: float = 0.88,
         stability_score_thresh: float = 0.95,
         min_mask_region_area: int = 100,
+        point_mask_box_size: Optional[int] = None,  # Box size for point-based masks
     ):
         """
         Initialize the mask generator.
@@ -75,6 +76,7 @@ class MaskGenerator:
         self.pred_iou_thresh = pred_iou_thresh
         self.stability_score_thresh = stability_score_thresh
         self.min_mask_region_area = min_mask_region_area
+        self.point_mask_box_size = point_mask_box_size
         
         self._sam = None
         self._mask_generator = None
@@ -123,14 +125,17 @@ class MaskGenerator:
         image: np.ndarray,
         point: tuple,  # (x, y) in image coordinates
         label: int = 1,  # 1 = foreground point, 0 = background point
+        box_size: Optional[int] = None,  # Optional bounding box size to constrain search
     ) -> Optional[MaskData]:
         """
-        Generate a mask from a point prompt.
+        Generate a mask from a point prompt, growing outward from the point.
         
         Args:
             image: Input image as numpy array (H, W, 3) in RGB format
             point: Point coordinates (x, y) in image space
             label: Point label (1 = foreground, 0 = background)
+            box_size: Optional bounding box size (pixels) to constrain initial search area.
+                     If None, uses adaptive size based on image dimensions.
             
         Returns:
             MaskData object or None if generation fails
@@ -152,17 +157,91 @@ class MaskGenerator:
         input_point = np.array([[x, y]])
         input_label = np.array([label])
         
+        # Optionally add a bounding box constraint to focus on local area
+        # This helps SAM grow outward from the point rather than finding distant objects
+        box = None
+        if box_size is None:
+            # Adaptive box size: use ~5% of image dimension, but at least 100px
+            box_size = max(100, min(width, height) // 20)
+        
+        # Use instance-level box size if provided, otherwise use parameter
+        if box_size is None:
+            box_size = self.point_mask_box_size
+        
+        # Create a small box centered on the point to constrain initial search
+        if box_size is not None:
+            box_half = box_size // 2
+            box_x0 = max(0, x - box_half)
+            box_y0 = max(0, y - box_half)
+            box_x1 = min(width, x + box_half)
+            box_y1 = min(height, y + box_half)
+            box = np.array([box_x0, box_y0, box_x1, box_y1])
+        else:
+            # Adaptive box size: use ~5% of image dimension, but at least 100px
+            box_size = max(100, min(width, height) // 20)
+            box_half = box_size // 2
+            box_x0 = max(0, x - box_half)
+            box_y0 = max(0, y - box_half)
+            box_x1 = min(width, x + box_half)
+            box_y1 = min(height, y + box_half)
+            box = np.array([box_x0, box_y0, box_x1, box_y1])
+        
+        # Try with box constraint first (more localized)
         masks, scores, logits = self._predictor.predict(
             point_coords=input_point,
             point_labels=input_label,
+            box=box,
             multimask_output=True,
         )
         
-        # Select best mask (highest score)
+        # If no good masks with box, try without box constraint
+        if len(masks) == 0 or np.max(scores) < 0.5:
+            logger.debug(f"No good masks with box constraint, trying without box")
+            masks, scores, logits = self._predictor.predict(
+                point_coords=input_point,
+                point_labels=input_label,
+                multimask_output=True,
+            )
+        
         if len(masks) == 0:
             return None
         
-        best_idx = np.argmax(scores)
+        # Select mask that is most localized to the point (smallest area, highest score)
+        # This encourages growth from the point rather than selecting large distant objects
+        mask_areas = [np.sum(m) for m in masks]
+        point_distances = []
+        
+        for mask in masks:
+            # Find centroid of mask
+            y_coords, x_coords = np.where(mask)
+            if len(y_coords) > 0:
+                centroid_x = x_coords.mean()
+                centroid_y = y_coords.mean()
+                # Distance from click point to mask centroid
+                dist = np.sqrt((centroid_x - x)**2 + (centroid_y - y)**2)
+                point_distances.append(dist)
+            else:
+                point_distances.append(float('inf'))
+        
+        # Score combines: high IoU score, small distance from point, reasonable size
+        # Prefer masks that are close to the point and have good scores
+        combined_scores = []
+        for i in range(len(masks)):
+            score = float(scores[i])
+            area = mask_areas[i]
+            dist = point_distances[i]
+            
+            # Normalize distance (use image diagonal as reference)
+            max_dist = np.sqrt(width**2 + height**2)
+            normalized_dist = dist / max_dist if max_dist > 0 else 1.0
+            
+            # Combined score: favor high IoU, low distance, reasonable size
+            # Weight: 60% IoU score, 30% proximity, 10% size (prefer medium sizes)
+            size_score = 1.0 - min(1.0, abs(area - (box_size**2)) / (box_size**2 * 2))
+            combined = 0.6 * score + 0.3 * (1.0 - normalized_dist) + 0.1 * size_score
+            combined_scores.append(combined)
+        
+        best_idx = np.argmax(combined_scores)
         mask = masks[best_idx]
         score = float(scores[best_idx])
         
