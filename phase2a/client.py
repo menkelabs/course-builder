@@ -420,11 +420,17 @@ class Phase2AClient:
         height, width = image.shape[:2]
         
         if self._svg_generator is None:
+            # Try to find OPCD palette in resources
+            palette_path = Path(__file__).parent.parent / "resources" / "OPCD_v4.gpl"
+            if not palette_path.exists():
+                palette_path = None  # Will use defaults
+            
             self._svg_generator = SVGGenerator(
                 width=width,
                 height=height,
                 colors=self.config.svg.colors,
                 stroke_width=self.config.svg.stroke_width,
+                palette_path=palette_path,
             )
         
         self.state.svg_content = self._svg_generator.generate(

@@ -5,6 +5,7 @@ Generates structured SVG files with per-hole layers and OPCD color classes.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 import logging
@@ -24,23 +25,100 @@ class SVGGenerator:
     - Hole99_OuterMesh
     
     Classes (OPCD palette):
-    - .water
-    - .bunker
-    - .green
-    - .fairway
-    - .rough
+    - .water (Lake)
+    - .bunker (Bunker)
+    - .green (Green)
+    - .fairway (Fairway)
+    - .rough (Rough)
+    - .tee (Tee)
+    - .cart_path (Concrete)
+    - .ignore (neutral)
     """
     
-    # OPCD color palette
-    DEFAULT_COLORS = {
-        "water": "#0066cc",
-        "bunker": "#f5deb3",
-        "green": "#228b22",
-        "fairway": "#90ee90",
-        "rough": "#556b2f",
-        "cart_path": "#808080",
-        "ignore": "#cccccc",
-    }
+    @staticmethod
+    def load_opcd_palette(palette_path: Optional[Path] = None) -> Dict[str, str]:
+        """
+        Load OPCD color palette from GPL file.
+        
+        Args:
+            palette_path: Path to OPCD_v4.gpl file. If None, uses default location.
+            
+        Returns:
+            Dictionary mapping feature names to hex colors
+        """
+        if palette_path is None:
+            # Default to resources directory
+            palette_path = Path(__file__).parent.parent / "resources" / "OPCD_v4.gpl"
+        
+        palette_path = Path(palette_path)
+        if not palette_path.exists():
+            logger.warning(f"OPCD palette not found at {palette_path}, using defaults")
+            return SVGGenerator._get_default_colors()
+        
+        colors = {}
+        with open(palette_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Parse GPL format: "R G B #HEX #Name"
+                # Example: "188 229 164 #BCE5A4   #Green - Blend 0.12m"
+                match = re.match(r'(\d+)\s+(\d+)\s+(\d+)\s+#([0-9A-Fa-f]{6})\s*#(.*)', line)
+                if match:
+                    r, g, b, hex_color, name = match.groups()
+                    # Extract base name (before dash)
+                    base_name = name.split('-')[0].strip().lower()
+                    hex_color = f"#{hex_color.upper()}"
+                    
+                    # Map to feature classes
+                    if 'green' in base_name:
+                        colors['green'] = hex_color
+                    elif 'fairway' in base_name:
+                        colors['fairway'] = hex_color
+                    elif 'rough' in base_name and 'deep' not in base_name and 'semi' not in base_name:
+                        colors['rough'] = hex_color
+                    elif 'bunker' in base_name:
+                        colors['bunker'] = hex_color
+                    elif 'tee' in base_name:
+                        colors['tee'] = hex_color
+                    elif 'lake' in base_name:
+                        colors['water'] = hex_color
+                    elif 'creek' in base_name:
+                        colors['creek'] = hex_color
+                    elif 'concrete' in base_name:
+                        colors['cart_path'] = hex_color
+                    elif 'hole99' in base_name.lower():
+                        colors['hole99'] = hex_color
+        
+        # Ensure all required colors are present
+        default_colors = SVGGenerator._get_default_colors()
+        for key, default_value in default_colors.items():
+            if key not in colors:
+                colors[key] = default_value
+                logger.warning(f"Missing color for {key}, using default {default_value}")
+        
+        logger.info(f"Loaded OPCD palette from {palette_path}")
+        return colors
+    
+    @staticmethod
+    def _get_default_colors() -> Dict[str, str]:
+        """Get default OPCD colors (fallback if palette file not found)."""
+        return {
+            "water": "#0000C0",      # Lake
+            "bunker": "#E5E5AA",     # Bunker
+            "green": "#BCE5A4",       # Green
+            "fairway": "#43E561",    # Fairway
+            "rough": "#278438",       # Rough
+            "tee": "#A0E5B8",        # Tee
+            "cart_path": "#BEBEBB",   # Concrete
+            "ignore": "#CCCCCC",      # Neutral gray
+            "hole99": "#FF00CB",      # Hole99
+        }
+    
+    # OPCD color palette - loaded from GPL file
+    DEFAULT_COLORS = _get_default_colors()
     
     def __init__(
         self,
@@ -48,6 +126,7 @@ class SVGGenerator:
         height: int = 4096,
         colors: Optional[Dict[str, str]] = None,
         stroke_width: float = 1.0,
+        palette_path: Optional[Path] = None,
     ):
         """
         Initialize the SVG generator.
@@ -57,10 +136,16 @@ class SVGGenerator:
             height: SVG height in pixels
             colors: Custom color palette (overrides defaults)
             stroke_width: Stroke width for paths
+            palette_path: Path to OPCD_v4.gpl palette file (auto-detected if None)
         """
         self.width = width
         self.height = height
-        self.colors = {**self.DEFAULT_COLORS, **(colors or {})}
+        
+        # Load OPCD palette from GPL file
+        opcd_colors = self.load_opcd_palette(palette_path)
+        
+        # Merge: OPCD palette -> custom colors -> defaults
+        self.colors = {**opcd_colors, **(colors or {})}
         self.stroke_width = stroke_width
     
     def _polygon_to_path(self, geometry: Any) -> str:
@@ -186,6 +271,14 @@ class SVGGenerator:
      width="{self.width}"
      height="{self.height}"
      viewBox="0 0 {self.width} {self.height}">
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about="">
+        <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Golf Course SVG</dc:title>
+        <dc:description xmlns:dc="http://purl.org/dc/elements/1.1/">Generated with OPCD v4 palette</dc:description>
+      </rdf:Description>
+    </rdf:RDF>
+  </metadata>
   <defs>
     <style type="text/css">
 {style_block}
