@@ -219,6 +219,52 @@ class InteractiveSelector:
         """Get all hole selections."""
         return self.selections.copy()
     
+    def extract_green_centers(self) -> List[Dict]:
+        """
+        Extract green center coordinates from selected green masks.
+        
+        For each hole with green selections, calculates the centroid
+        of all selected green masks to determine the green center.
+        
+        Returns:
+            List of green center dictionaries [{hole, x, y}, ...]
+        """
+        green_centers = []
+        
+        for hole, selection in self.selections.items():
+            if not selection.greens:
+                continue
+            
+            # Calculate centroid of all green masks for this hole
+            all_x_coords = []
+            all_y_coords = []
+            
+            for mask_id in selection.greens:
+                if mask_id not in self.masks:
+                    continue
+                
+                mask_data = self.masks[mask_id]
+                mask = mask_data.mask
+                
+                # Get coordinates of all pixels in the mask
+                y_coords, x_coords = np.where(mask)
+                if len(y_coords) > 0:
+                    all_x_coords.extend(x_coords.tolist())
+                    all_y_coords.extend(y_coords.tolist())
+            
+            if len(all_x_coords) > 0:
+                # Calculate centroid
+                center_x = float(np.mean(all_x_coords))
+                center_y = float(np.mean(all_y_coords))
+                
+                green_centers.append({
+                    "hole": hole,
+                    "x": center_x,
+                    "y": center_y,
+                })
+        
+        return green_centers
+    
     def save_selections(self, output_path: Path) -> None:
         """Save selections to JSON file."""
         output_path = Path(output_path)

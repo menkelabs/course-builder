@@ -572,8 +572,22 @@ def select(
         selector.save_selections(selections_path)
         console.print(f"\n[green]✓ Saved selections to {selections_path}[/green]")
         
+        # Extract and save green centers from selected green masks
+        green_centers = selector.extract_green_centers()
+        if green_centers:
+            green_centers_path = output / "metadata" / "green_centers.json"
+            green_centers_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(green_centers_path, "w") as f:
+                json.dump(green_centers, f, indent=2)
+            console.print(f"[green]✓ Extracted and saved green centers to {green_centers_path}[/green]")
+            console.print(f"[dim]   Found green centers for {len(green_centers)} holes[/dim]")
+        else:
+            console.print("[yellow]⚠ No green centers extracted (no green selections found)[/yellow]")
+        
         console.print("\n[bold green]Selection complete![/bold green]")
         console.print(f"[dim]Next: Use these selections with the pipeline[/dim]")
+        if green_centers:
+            console.print(f"[dim]   Green centers saved to: {green_centers_path}[/dim]")
         
     except Exception as e:
         console.print(f"\n[red]Error: {e}[/red]")

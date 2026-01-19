@@ -25,9 +25,43 @@ The complete pipeline processes a golf course through these stages:
 
 ## Step-by-Step Walkthrough
 
-### Step 1: Prepare Input Files
+### Step 1: Interactive Selection (Recommended)
 
-Create a green centers file (optional but recommended for accurate hole assignment):
+For best results, use the interactive selection workflow which will automatically extract green center coordinates:
+
+```bash
+cd phase2a
+phase2a select ../phase2a/resources/Pictatinny_B.jpg \
+  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --device cuda \
+  -o test_interactive
+```
+
+**During the interactive workflow:**
+1. For each hole (1-18), you'll be prompted to click on the green
+2. The tool automatically calculates the green center from your selections
+3. Green centers are saved to `test_interactive/metadata/green_centers.json`
+
+**Note:** The green centers are automatically extracted from the centroid of all selected green masks for each hole. You don't need to manually create a green centers file!
+
+### Step 2: Run Complete Pipeline
+
+**Option A: Using automatically extracted green centers from interactive selection:**
+
+```bash
+phase2a run ../phase2a/resources/Pictatinny_B.jpg \
+  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --green-centers test_interactive/metadata/green_centers.json \
+  --device cuda \
+  --high-threshold 0.85 \
+  --low-threshold 0.5 \
+  -o test_output \
+  -v
+```
+
+**Option B: Manual green centers file (if you didn't use interactive selection):**
+
+If you prefer to create a green centers file manually:
 
 ```bash
 # Create green_centers.json
@@ -38,9 +72,14 @@ cat > green_centers.json << EOF
   {"hole": 3, "x": 5000, "y": 2200}
 ]
 EOF
-```
 
-### Step 2: Run Complete Pipeline
+phase2a run ../phase2a/resources/Pictatinny_B.jpg \
+  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --green-centers green_centers.json \
+  --device cuda \
+  -o test_output \
+  -v
+```
 
 Run the full automated pipeline:
 
