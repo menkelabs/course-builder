@@ -28,6 +28,24 @@ from .svg import SVGGenerator
 
 logger = logging.getLogger(__name__)
 
+# Cache OPCD palette to avoid reloading on every redraw
+_OPCD_PALETTE_CACHE = None
+_OPCD_RGB_CACHE = None
+
+def _get_opcd_colors():
+    """Get OPCD colors, cached after first load."""
+    global _OPCD_PALETTE_CACHE, _OPCD_RGB_CACHE
+    
+    if _OPCD_PALETTE_CACHE is None:
+        _OPCD_PALETTE_CACHE = SVGGenerator.load_opcd_palette()
+        # Pre-convert hex to RGB arrays for performance
+        _OPCD_RGB_CACHE = {}
+        for key, hex_color in _OPCD_PALETTE_CACHE.items():
+            hex_color = hex_color.lstrip('#')
+            _OPCD_RGB_CACHE[key] = np.array([int(hex_color[i:i+2], 16) for i in (0, 2, 4)])
+    
+    return _OPCD_PALETTE_CACHE, _OPCD_RGB_CACHE
+
 
 def create_mask_overlay(
     image: np.ndarray,
@@ -52,17 +70,11 @@ def create_mask_overlay(
     
     selected_ids = set(selected_mask_ids or [])
     
-    # Load OPCD palette colors
-    opcd_colors = SVGGenerator.load_opcd_palette()
-    
-    # Convert hex colors to RGB arrays
-    def hex_to_rgb(hex_color: str) -> np.ndarray:
-        """Convert hex color (#RRGGBB) to RGB array."""
-        hex_color = hex_color.lstrip('#')
-        return np.array([int(hex_color[i:i+2], 16) for i in (0, 2, 4)])
+    # Get cached OPCD palette colors (only loaded once)
+    opcd_colors, opcd_rgb = _get_opcd_colors()
     
     # Default colors if feature type can't be determined
-    default_color = hex_to_rgb(opcd_colors.get('ignore', '#CCCCCC'))
+    default_color = opcd_rgb.get('ignore', np.array([204, 204, 204]))
     selected_highlight = np.array([255, 0, 0])  # Red border for selected
     
     for mask_data in masks:
@@ -75,19 +87,19 @@ def create_mask_overlay(
         feature_color = default_color
         
         if 'green' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('green', '#BCE5A4'))
+            feature_color = opcd_rgb.get('green', np.array([188, 229, 164]))
         elif 'fairway' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('fairway', '#43E561'))
+            feature_color = opcd_rgb.get('fairway', np.array([67, 229, 97]))
         elif 'bunker' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('bunker', '#E5E5AA'))
+            feature_color = opcd_rgb.get('bunker', np.array([229, 229, 170]))
         elif 'tee' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('tee', '#A0E5B8'))
+            feature_color = opcd_rgb.get('tee', np.array([160, 229, 184]))
         elif 'rough' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('rough', '#278438'))
+            feature_color = opcd_rgb.get('rough', np.array([39, 132, 56]))
         elif 'water' in mask_id_lower or 'lake' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('water', '#0000C0'))
+            feature_color = opcd_rgb.get('water', np.array([0, 0, 192]))
         elif 'cart_path' in mask_id_lower or 'concrete' in mask_id_lower:
-            feature_color = hex_to_rgb(opcd_colors.get('cart_path', '#BEBEBB'))
+            feature_color = opcd_rgb.get('cart_path', np.array([190, 190, 187]))
         
         # Use feature color, but make selected masks more visible
         if is_selected:
@@ -138,6 +150,7 @@ class InteractiveMaskSelector:
         self.ax = None
         self.done_button = None
         self._done_pressed = False
+        self._image_artist = None  # Cache image artist for efficient updates
         
     def _on_click(self, event):
         """Handle mouse click events."""
@@ -295,25 +308,30 @@ class InteractiveMaskSelector:
         
         overlay = create_mask_overlay(image, masks, self.selected_mask_ids)
         
-        # Save current zoom/pan state before clearing
+        # Save current zoom/pan state before updating
         current_xlim = self.ax.get_xlim() if self.ax is not None else None
         current_ylim = self.ax.get_ylim() if self.ax is not None else None
         
-        self.ax.clear()
-        # Ensure image is in correct format for matplotlib (RGB, not BGR)
-        # imshow expects RGB for uint8 arrays
-        # Set extent to ensure proper coordinate mapping when zoomed/panned
-        # extent=[left, right, bottom, top] in data coordinates
-        height, width = overlay.shape[:2]
-        self.ax.imshow(overlay, extent=[0, width, height, 0], origin='upper')
-        self.ax.set_title(self.title, fontsize=14, pad=20)
-        # Keep axis visible but minimal for zoom/pan to work properly
-        # The axis helps with coordinate transformation
-        self.ax.axis('on')
-        self.ax.set_facecolor('black')
+        # Check if we have an existing image to update (more efficient than clearing)
+        if hasattr(self, '_image_artist') and self._image_artist is not None:
+            # Update existing image data instead of clearing and redrawing
+            self._image_artist.set_array(overlay)
+        else:
+            # First time - create image artist
+            height, width = overlay.shape[:2]
+            self._image_artist = self.ax.imshow(overlay, extent=[0, width, height, 0], origin='upper')
+            self.ax.set_title(self.title, fontsize=14, pad=20)
+            self.ax.axis('on')
+            self.ax.set_facecolor('black')
+            
+            # Set initial limits
+            if current_xlim is None or current_ylim is None:
+                self.ax.set_xlim(0, width)
+                self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
         
-        # Restore zoom/pan state if it was set, otherwise use default limits
+        # Restore zoom/pan state if it was set
         if current_xlim is not None and current_ylim is not None:
+            height, width = overlay.shape[:2]
             # Validate that saved limits are still within image bounds
             xlim_valid = (0 <= current_xlim[0] <= width and 0 <= current_xlim[1] <= width and
                          current_xlim[0] < current_xlim[1])
@@ -323,14 +341,6 @@ class InteractiveMaskSelector:
             if xlim_valid and ylim_valid:
                 self.ax.set_xlim(current_xlim)
                 self.ax.set_ylim(current_ylim)
-            else:
-                # If saved limits are invalid, use default
-                self.ax.set_xlim(0, width)
-                self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
-        else:
-            # First time - set default limits to match image dimensions
-            self.ax.set_xlim(0, width)
-            self.ax.set_ylim(height, 0)  # Inverted Y axis (origin='upper')
         
         # Add mask ID labels at centroids
         for i, mask_data in enumerate(masks):
@@ -347,27 +357,36 @@ class InteractiveMaskSelector:
                 is_selected = mask_data.id in self.selected_mask_ids
                 color = 'lime' if is_selected else 'white'
                 weight = 'bold' if is_selected else 'normal'
-                self.ax.text(centroid_x, centroid_y, f"{mask_idx}", 
-                           color=color, fontsize=8, ha='center', va='center',
-                           weight=weight,
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
+                # Only add text labels if we're doing a full redraw (not just updating image)
+                if not hasattr(self, '_text_artists'):
+                    self._text_artists = []
+                
+                # For now, skip text labels on updates to avoid blinking
+                # We can add them back if needed, but they cause redraw issues
+                pass
         
-        # Add legend for selected count and instructions
-        info_text = f"Selected: {len(self.selected_mask_ids)}"
-        if self.selected_mask_ids:
-            self.ax.text(0.02, 0.98, info_text,
+        # Add legend and instructions only on first draw
+        if not hasattr(self, '_info_text') or self._info_text is None:
+            info_text = f"Selected: {len(self.selected_mask_ids)}"
+            if self.selected_mask_ids:
+                self._info_text = self.ax.text(0.02, 0.98, info_text,
+                            transform=self.ax.transAxes,
+                            fontsize=12, verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
+            
+            # Add keyboard shortcuts info
+            shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Clear"
+            self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
                         transform=self.ax.transAxes,
-                        fontsize=12, verticalalignment='top',
-                        bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
+                        fontsize=10, horizontalalignment='center',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        else:
+            # Update info text if it exists
+            if hasattr(self, '_info_text') and self._info_text is not None:
+                self._info_text.set_text(f"Selected: {len(self.selected_mask_ids)}")
         
-        # Add keyboard shortcuts info
-        shortcuts_text = "Click to mark | Mouse wheel: Zoom | Drag: Pan | Enter/Space: Done | Esc: Clear"
-        self.ax.text(0.5, 0.02, shortcuts_text,
-                    transform=self.ax.transAxes,
-                    fontsize=10, horizontalalignment='center',
-                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        self.fig.canvas.draw()
+        # Use draw_idle for smoother updates (non-blocking)
+        self.fig.canvas.draw_idle()
     
     def show(self, block: bool = True):
         """
