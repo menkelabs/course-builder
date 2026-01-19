@@ -211,6 +211,7 @@ class Phase2AClient:
             self._mask_generator = MaskGenerator(
                 model_type=self.config.sam.model_type,
                 checkpoint_path=self.config.sam.checkpoint_path,
+                device=self.config.sam.device,
                 points_per_side=self.config.sam.points_per_side,
                 pred_iou_thresh=self.config.sam.pred_iou_thresh,
                 stability_score_thresh=self.config.sam.stability_score_thresh,

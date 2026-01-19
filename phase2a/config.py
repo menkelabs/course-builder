@@ -21,6 +21,7 @@ class SAMConfig:
     """Configuration for SAM mask generation."""
     model_type: str = "vit_h"
     checkpoint_path: Optional[str] = None
+    device: str = "cuda"  # "cuda" or "cpu"
     points_per_side: int = 32
     pred_iou_thresh: float = 0.88
     stability_score_thresh: float = 0.95
@@ -126,6 +127,7 @@ class Phase2AConfig:
             "sam": {
                 "model_type": self.sam.model_type,
                 "checkpoint_path": self.sam.checkpoint_path,
+                "device": self.sam.device,
                 "points_per_side": self.sam.points_per_side,
                 "pred_iou_thresh": self.sam.pred_iou_thresh,
                 "stability_score_thresh": self.sam.stability_score_thresh,
