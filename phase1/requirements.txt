@@ -1,0 +1,31 @@
+# Phase 1 - QGIS/GDAL Terrain Preparation
+# Core dependencies
+
+# CLI and utilities
+click>=8.1.0
+rich>=13.0.0
+pydantic>=2.0.0
+pyyaml>=6.0.0
+
+# GIS and raster processing
+rasterio>=1.3.0
+geopandas>=0.14.0
+numpy>=1.24.0
+fiona>=1.9.0
+shapely>=2.0.0
+
+# QGIS - NOT available via pip
+# QGIS must be installed separately (Desktop or Server)
+# PyQGIS bindings come with QGIS Desktop installation
+# For automation, use qgis_process CLI tool (included with QGIS)
+# See: https://qgis.org/download/
+
+# GDAL - typically installed via system package manager or conda
+# Python bindings (rasterio, geopandas) are installed above
+# GDAL library itself must be installed separately
+# See: https://gdal.org/download.html
+
+# Optional: for development
+# pytest>=7.0.0
+# black>=23.0.0
+# mypy>=1.0.0
