@@ -58,37 +58,15 @@ This workflow:
 
 ### Visual Workflow Guide
 
-The interactive selection workflow guides you through assigning features to each hole step-by-step. Below is a visual guide using the Pictatinny course imagery:
+The interactive selection workflow guides you through assigning features to each hole step-by-step. Watch the video below for a complete walkthrough:
 
-#### Step 1: Generate Candidate Masks
-
-The pipeline first generates candidate masks using SAM. The GUI displays all masks overlaid on the satellite image:
-
-![Step 1: Candidate Masks](docs/images/workflow_step1_masks.jpg)
-
-Yellow highlights indicate candidate masks that can be selected. Each mask is labeled with an index number.
-
-#### Step 2: Select Green
-
-For each hole (1-18), you'll be prompted to click on the green:
-
-![Step 2: Select Green](docs/images/workflow_step2_green.jpg)
-
-Click on the mask(s) that represent the green for the current hole. Selected masks are highlighted in red.
-
-#### Step 3: Select Fairway
-
-Next, select fairway areas:
-
-![Step 3: Select Fairway](docs/images/workflow_step3_fairway.jpg)
-
-You can click multiple masks to select all fairway regions for the hole.
-
-#### Step 4: Select Bunkers
-
-Finally, select bunkers:
-
-![Step 4: Select Bunkers](docs/images/workflow_step4_bunkers.jpg)
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=ErSb4hcTAe4">
+    <img src="https://img.youtube.com/vi/ErSb4hcTAe4/maxresdefault.jpg" alt="Phase 2A Workflow Video" style="width:100%;max-width:800px;">
+  </a>
+  <br>
+  <a href="https://www.youtube.com/watch?v=ErSb4hcTAe4">Watch on YouTube: Phase 2A Interactive Workflow</a>
+</div>
 
 #### GUI Controls
 

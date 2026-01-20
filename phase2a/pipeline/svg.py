@@ -41,14 +41,14 @@ class SVGGenerator:
         Load OPCD color palette from GPL file.
         
         Args:
-            palette_path: Path to OPCD_v4.gpl file. If None, uses default location.
+            palette_path: Path to color_defaults.gpl file. If None, uses default location.
             
         Returns:
             Dictionary mapping feature names to hex colors
         """
         if palette_path is None:
             # Default to resources directory
-            palette_path = Path(__file__).parent.parent / "resources" / "OPCD_v4.gpl"
+            palette_path = Path(__file__).parent.parent / "resources" / "color_defaults.gpl"
         
         palette_path = Path(palette_path)
         if not palette_path.exists():
@@ -136,7 +136,7 @@ class SVGGenerator:
             height: SVG height in pixels
             colors: Custom color palette (overrides defaults)
             stroke_width: Stroke width for paths
-            palette_path: Path to OPCD_v4.gpl palette file (auto-detected if None)
+            palette_path: Path to color_defaults.gpl palette file (auto-detected if None)
         """
         self.width = width
         self.height = height

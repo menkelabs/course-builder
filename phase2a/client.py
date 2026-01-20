@@ -421,7 +421,7 @@ class Phase2AClient:
         
         if self._svg_generator is None:
             # Try to find OPCD palette in resources
-            palette_path = Path(__file__).parent.parent / "resources" / "OPCD_v4.gpl"
+            palette_path = Path(__file__).parent.parent / "resources" / "color_defaults.gpl"
             if not palette_path.exists():
                 palette_path = None  # Will use defaults
             

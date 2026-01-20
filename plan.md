@@ -1,17 +1,17 @@
-# Embabel Automation Plan for OPCD Course Builder
+# Embabel Automation Plan for Course Builder
 
 ## Overview
 
-This document outlines automation for the **Open Platform Course Designer (OPCD)** workflow using **Embabel** as the orchestration layer with **MCP tools** for each application in the pipeline. The goal is to automate the "None to Done" process of creating golf courses for GSPro and other 3D applications.
+This document outlines automation for the **Course Designer** workflow using **Embabel** as the orchestration layer with **MCP tools** for each application in the pipeline. The goal is to approximate the "None to Done" process of creating golf courses in GSPro.. Might be adaptable to other golf simulator games as similar processes are probably part of the mix.
 
 ---
 
-## The OPCD Workflow (None to Done)
+## The Course Builder Workflow (None to Done)
 
-The complete workflow consists of 24 steps across multiple applications:
+The complete workflow consists of 22 steps across multiple applications:
 
 ```
-LIDAR → Unity (Terrain) → Inkscape (SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final) → GreenKeeper
+LIDAR → Unity (Terrain) → Inkscape (SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final)
 ```
 
 ---
@@ -66,7 +66,7 @@ unity_setup_terrain:
 
 ```yaml
 inkscape_create_project:
-  description: "Set up new Inkscape file with OPCD palette and layers"
+  description: "Set up new Inkscape file with color palette and layers"
   inputs:
     - satellite_image: "Overlay image of the course"
     - course_name: "Name for the project"
@@ -88,7 +88,7 @@ inkscape_draw_shape:
     - layer: "Target layer"
     - shape_type: "fairway|rough|semi_rough|deep_rough|green|fringe|bunker|water|tee"
     - points: "Array of coordinate points"
-    - fill_color: "OPCD palette color"
+    - fill_color: "Palette color"
   outputs:
     - shape: "Shape added to layer"
 
@@ -194,8 +194,8 @@ svg_convert:
 
 | Step | Manual Process | MCP Tool |
 |------|----------------|----------|
-| 9 | Open OPCDcourseconversion.blend file (Blender 2.83 LTS) | `blender_open_opcd_template` |
-| 10 | Install Boundary Align Remesh, Mesh Tools, Loop Tools, OPCD Blender Tools | `blender_install_addons` |
+| 9 | Open courseconversion.blend file (Blender 2.83 LTS) | `blender_open_course_template` |
+| 10 | Install Boundary Align Remesh, Mesh Tools, Loop Tools, Course Builder Blender Tools | `blender_install_addons` |
 | 11 | Import SVG | `blender_import_svg` |
 | 12 | Import Terrain.obj | `blender_import_terrain` |
 | 13 | Convert Mats and Cut | `blender_convert_and_cut` |
@@ -206,21 +206,21 @@ svg_convert:
 #### MCP Tools - Blender Operations
 
 ```yaml
-blender_open_opcd_template:
-  description: "Open the OPCDcourseconversion.blend template file"
+blender_open_course_template:
+  description: "Open the courseconversion.blend template file"
   inputs:
-    - template_path: "Path to OPCDcourseconversion.blend"
+    - template_path: "Path to courseconversion.blend"
   outputs:
     - blender_session: "Active Blender session with template"
 
 blender_install_addons:
-  description: "Install required OPCD addons if not present"
+  description: "Install required Blender addons if not present"
   inputs:
     - addons:
       - "Boundary Align Remesh"
       - "Mesh Tools"
       - "Loop Tools"
-      - "OPCD Blender Tools"
+      - "Course Builder Blender Tools"
   outputs:
     - status: "Addons installed and enabled"
 
@@ -239,7 +239,7 @@ blender_import_terrain:
     - terrain_mesh: "Imported terrain mesh"
 
 blender_convert_and_cut:
-  description: "Run Convert Mats and Cut operation from OPCD Tools"
+  description: "Run Convert Mats and Cut operation from Blender Tools"
   inputs:
     - svg_curves: "Imported SVG"
     - terrain_mesh: "Imported terrain"
@@ -423,78 +423,6 @@ unity_build_asset_bundle:
 
 ---
 
-### Phase 7: GreenKeeper Setup (Steps 23-24)
-
-| Step | Manual Process | MCP Tool |
-|------|----------------|----------|
-| 23 | Use GSP GreenKeeper to add Tees, Pins, Shotpoints, and Hazards | `greenkeeper_configure` |
-| 24 | Using Paid Assets - GPU Instancer and PIDI Water | (covered in Unity tools above) |
-
-#### MCP Tools - GreenKeeper
-
-```yaml
-greenkeeper_add_tees:
-  description: "Add tee positions for each hole"
-  inputs:
-    - course: "Course data"
-    - tees_per_hole:
-      - hole: 1
-        positions:
-          - color: "black"
-            position: [x, y, z]
-          - color: "blue"
-            position: [x, y, z]
-          # ... etc
-  outputs:
-    - tees_configured: "Tee positions saved"
-
-greenkeeper_add_pins:
-  description: "Add pin positions using slope shader guidance"
-  inputs:
-    - course: "Course data"
-    - pins_per_hole:
-      - hole: 1
-        positions:
-          - id: "A"
-            position: [x, y, z]
-          - id: "B"
-            position: [x, y, z]
-  outputs:
-    - pins_configured: "Pin positions saved"
-
-greenkeeper_add_shotpoints:
-  description: "Add shotpoint/aim point markers"
-  inputs:
-    - course: "Course data"
-    - shotpoints: "Array of shotpoint definitions"
-  outputs:
-    - shotpoints_configured: "Shotpoints saved"
-
-greenkeeper_add_hazards:
-  description: "Define hazard boundaries and types"
-  inputs:
-    - course: "Course data"
-    - hazards:
-      - type: "water"
-        boundary: "polygon points"
-      - type: "bunker"
-        boundary: "polygon points"
-      - type: "ob"
-        boundary: "polygon points"
-  outputs:
-    - hazards_configured: "Hazards saved"
-
-greenkeeper_export:
-  description: "Export GreenKeeper data for GSPro"
-  inputs:
-    - course: "Course data"
-    - format: "GSPro format"
-  outputs:
-    - greenkeeper_file: "Exported GK file"
-```
-
----
-
 ## Embabel Orchestration
 
 Embabel coordinates the entire None to Done workflow, calling MCP tools in sequence.
@@ -502,8 +430,8 @@ Embabel coordinates the entire None to Done workflow, calling MCP tools in seque
 ### Complete Workflow Definition
 
 ```yaml
-workflow: opcd_none_to_done
-name: "OPCD Golf Course Creation"
+workflow: course_builder_none_to_done
+name: "Golf Course Creation"
 
 phases:
   - name: terrain_creation
@@ -545,7 +473,7 @@ phases:
 
   - name: blender_processing
     steps:
-      - tool: blender_open_opcd_template
+      - tool: blender_open_course_template
       - tool: blender_import_svg
       - tool: blender_import_terrain
       - tool: blender_convert_and_cut
@@ -570,20 +498,10 @@ phases:
         if: has_water
       - tool: unity_setup_gpu_instancer
       - tool: unity_build_asset_bundle
-    gate: bundle_built
-
-  - name: greenkeeper_setup
-    steps:
-      - tool: greenkeeper_add_tees
-      - tool: greenkeeper_add_pins
-      - tool: greenkeeper_add_shotpoints
-      - tool: greenkeeper_add_hazards
-      - tool: greenkeeper_export
     gate: course_complete
 
 output:
   asset_bundle: "${unity_build_asset_bundle.output.asset_bundle}"
-  greenkeeper_data: "${greenkeeper_export.output.greenkeeper_file}"
   status: "DONE"
 ```
 
@@ -605,12 +523,12 @@ output:
 │ MCP Server  │    │ MCP Server  │    │ MCP Server  │
 └─────────────┘    └─────────────┘    └─────────────┘
        │                   │                   │
-       │                   │                   │
-       ▼                   ▼                   ▼
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    Unity    │    │ SVG Convert │    │ GreenKeeper │
-│ MCP Server  │    │ MCP Server  │    │ MCP Server  │
-└─────────────┘    └─────────────┘    └─────────────┘
+       │                   │
+       ▼                   ▼
+┌─────────────┐    ┌─────────────┐
+│    Unity    │    │ SVG Convert │
+│ MCP Server  │    │ MCP Server  │
+└─────────────┘    └─────────────┘
 ```
 
 ### MCP Server Responsibilities
@@ -622,7 +540,6 @@ output:
 | `svg-convert-mcp` | GSProSVGConvert | SVG preparation for Blender |
 | `blender-mcp` | Blender 2.83 LTS | Mesh conversion, terrain projection, FBX export |
 | `unity-mcp` | Unity | Terrain, materials, vegetation, asset bundles |
-| `greenkeeper-mcp` | GSP GreenKeeper | Tees, pins, hazards, course data |
 
 ---
 
@@ -644,7 +561,6 @@ output:
 
 - [ ] `lidar-mcp` - Heightmap generation
 - [ ] `unity-mcp` - Vegetation, shaders, GPU Instancer
-- [ ] `greenkeeper-mcp` - Full GreenKeeper automation
 
 ### Phase 4: Embabel Integration
 
@@ -692,7 +608,7 @@ Tools should support optional paid assets:
 
 ## References
 
-- [OPCD Documentation](https://docs.google.com/document/d/1InsfFuOrAH4l2S6RnTy17_O8FPXwt_EA_jKLvW4Ky80)
+- [Course Builder Documentation](https://docs.google.com/document/d/1InsfFuOrAH4l2S6RnTy17_O8FPXwt_EA_jKLvW4Ky80)
 - [None to Done Video Series](https://docs.google.com/document/d/1bwNRByfPQNbUOWfKymXvdoWq9QP9-1R0U1GaJf5z9fU)
-- [OPCD Discord](https://discord.gg/4ZhJzwx)
+- [Course Builder Discord](https://discord.gg/4ZhJzwx)
 - [Zeros and Ones GCD Tutorials](https://zerosandonesgcd.com/)

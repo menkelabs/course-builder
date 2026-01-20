@@ -4,6 +4,8 @@ Phase 2A - Automated Satellite Tracing for Golf Courses
 
 Convert satellite imagery of golf courses into structured SVG geometry using SAM (Segment Anything Model) for automatic feature extraction.
 
+> **Note**: Phase 2A is one of several sections that will be developed as part of the complete course builder pipeline. See [plan.md](plan.md) for the full automation plan and workflow overview.
+
 ## Features
 
 - **Automatic Feature Extraction**: Uses SAM to generate candidate masks from satellite imagery
