@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: course-builder-agents
+  
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:mock-api-key}
+      chat:
+        options:
+          model: gpt-4-turbo-preview
+          temperature: 0.7
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.coursebuilder: DEBUG
+    org.springframework.ai: DEBUG
+
+# Course Builder Configuration
+coursebuilder:
+  agents:
+    max-tool-depth: 3
+    enable-mock-mode: true

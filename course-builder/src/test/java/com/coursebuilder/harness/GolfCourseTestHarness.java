@@ -248,10 +248,10 @@ public class GolfCourseTestHarness {
             System.out.println("\n--- Test: Agent Routing for Phase2a Tasks ---");
             
             String[] phase2aTasks = {
-                "Generate SAM masks from satellite image",
-                "Classify the extracted features",
-                "Run interactive selection workflow",
-                "Generate SVG from masks"
+                "Generate masks from satellite image using SAM",
+                "Classify features from the masks", 
+                "Run phase2a interactive selection",
+                "Use segment anything model on satellite"
             };
             
             for (String task : phase2aTasks) {
@@ -272,11 +272,11 @@ public class GolfCourseTestHarness {
             System.out.println("\n--- Test: Agent Routing for Blender Tasks ---");
             
             String[] blenderTasks = {
-                "Import SVG into Blender",
-                "Convert meshes to terrain",
-                "Export FBX files",
-                "Fix the cart path donut issue",
-                "Add curbs to cart paths"
+                "Open Blender and import SVG",
+                "Use Blender to convert meshes",
+                "Export FBX files from Blender",
+                "Fix the donut in Blender",
+                "Add curbs in Blender"
             };
             
             for (String task : blenderTasks) {

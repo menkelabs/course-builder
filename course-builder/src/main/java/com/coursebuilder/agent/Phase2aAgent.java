@@ -33,14 +33,16 @@ public class Phase2aAgent extends AbstractAgent {
             List.of(phase2aMcp),
             List.of(
                 ".*phase2a.*",
-                ".*sam.*",
-                ".*satellite.*",
-                ".*mask.*",
-                ".*trace.*course.*",
-                ".*classify.*",
-                ".*svg.*generat.*",
-                ".*interactive.*select.*",
-                ".*segment.*anything.*"
+                ".*\\bsam\\b.*",
+                ".*satellite.*image.*using.*",
+                ".*generate.*mask.*",
+                ".*mask.*from.*satellite.*",
+                ".*trace.*satellite.*",
+                ".*classify.*feature.*",
+                ".*feature.*classif.*",
+                ".*interactive.*select.*phase2a.*",
+                ".*segment.*anything.*",
+                ".*run.*phase2a.*"
             )
         );
         this.courseService = courseService;
@@ -234,9 +236,11 @@ public class Phase2aAgent extends AbstractAgent {
             "parameters", Map.of("courseId", courseId)
         ), context);
         
+        boolean isValid = (Boolean) result.data().get("valid");
+        String validationStatus = isValid ? "✅ All files present and valid" : "❌ Validation failed";
+        
         return AgentResponse.withTools(
-            "Phase2a Output Validation\n\n" + 
-            (Boolean) result.data().get("valid") ? "✅ All files present and valid" : "❌ Validation failed" + 
+            "Phase2a Output Validation\n\n" + validationStatus + 
             "\n\nFiles checked: " + result.data().get("filesChecked"),
             List.of(AgentResponse.ToolInvocation.of("phase2a_validate", Map.of(), result.data()))
         );

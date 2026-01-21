@@ -34,16 +34,19 @@ public class BlenderAgent extends AbstractAgent {
             List.of(blenderMcp),
             List.of(
                 ".*blender.*",
-                ".*mesh.*",
-                ".*fbx.*",
-                ".*import.*svg.*",
-                ".*import.*terrain.*",
+                ".*\\bmesh.*convert.*",
+                ".*\\bfbx\\b.*",
+                ".*import.*svg.*blender.*",
+                ".*import.*terrain.*blender.*",
                 ".*convert.*mesh.*",
-                ".*curb.*",
+                ".*\\bcurb.*",
                 ".*bulkhead.*",
                 ".*water.*plane.*",
                 ".*export.*fbx.*",
-                ".*donut.*fix.*"
+                ".*donut.*",
+                ".*fix.*donut.*",
+                ".*cart.*path.*donut.*",
+                ".*fix.*cart.*path.*"
             )
         );
         this.courseService = courseService;
