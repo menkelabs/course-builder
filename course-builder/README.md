@@ -2,6 +2,8 @@
 
 A Spring Boot application demonstrating the **Matryoshka Tool Pattern** for building GSPro golf courses through the "None to Done" workflow.
 
+> **Note**: This is the agent orchestration component of the course builder pipeline. See the [main README](../README.md) for an overview of all components and [plan.md](../plan.md) for the full automation specification.
+
 ## Overview
 
 This project implements the course builder workflow from [plan.md](../plan.md) using the nested tools pattern (Matryoshka tools) from [embabel-agent PR #1289](https://github.com/embabel/embabel-agent/pull/1289).
