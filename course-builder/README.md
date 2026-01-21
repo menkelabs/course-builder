@@ -6,7 +6,16 @@ A Spring Boot application demonstrating the **Matryoshka Tool Pattern** for buil
 
 ## Overview
 
-This project implements the course builder workflow from [plan.md](../plan.md) using the nested tools pattern (Matryoshka tools) from [embabel-agent PR #1289](https://github.com/embabel/embabel-agent/pull/1289).
+This project implements the course builder workflow from [plan.md](../plan.md) using **Goal-Oriented Action Planning (GOAP)** combined with the nested tools pattern (Matryoshka tools) from [embabel-agent PR #1289](https://github.com/embabel/embabel-agent/pull/1289).
+
+### Why GOAP + Nested Tools?
+
+The combination creates an intelligent, autonomous agent that can:
+
+- **Plan Dynamically**: Automatically determine action sequences to achieve goals (e.g., "build complete course") based on current world state
+- **Handle Complexity**: 50+ tools organized hierarchically, revealed progressively as GOAP selects relevant action groups
+- **Adapt and Replan**: If an action fails or produces unexpected results, the agent can replan rather than following a rigid script
+- **Track Progress**: Workflow gates map directly to GOAP world state, enabling goal-driven progress monitoring
 
 ### The "None to Done" Workflow
 
@@ -160,17 +169,45 @@ The test harness demonstrates:
 
 ## Key Concepts
 
+### GOAP Architecture
+
+This implementation uses **Goal-Oriented Action Planning (GOAP)**, an AI architecture developed by Jeff Orkin for the game F.E.A.R. GOAP enables agents to dynamically plan action sequences to achieve goals based on world state.
+
+**GOAP Components in Course Builder:**
+
+| Component | Implementation |
+|-----------|----------------|
+| **Goals** | Course completion states (e.g., `terrain_ready`, `course_complete`) |
+| **World State** | `GolfCourse.workflowState` - tracks gate completions and file outputs |
+| **Actions** | Matryoshka tools with preconditions and effects |
+| **Planner** | `AgentRouter` + individual agents determine optimal action sequences |
+
+**Example GOAP Planning:**
+```
+Goal: course_complete
+Current State: {terrain_ready: true, svg_complete: false, ...}
+
+Planner evaluates:
+  1. Check preconditions for each available action
+  2. Find actions whose effects advance toward goal
+  3. Chain actions: phase2a_run → svg_convert → blender_export → unity_build
+  4. Execute plan, update world state after each action
+  5. Replan if action fails or state changes unexpectedly
+```
+
 ### Agents
-High-level AI coordinators that understand user intent and orchestrate tool execution:
-- **GolfCourseWorkflowAgent**: Main orchestrator for the complete workflow
-- **Phase2aAgent**: Specialist for SAM-based tracing operations
-- **BlenderAgent**: Specialist for mesh operations
+High-level AI coordinators that implement GOAP planning to understand user intent and orchestrate tool execution:
+- **GolfCourseWorkflowAgent**: Main GOAP planner for the complete workflow, manages goals and world state
+- **Phase2aAgent**: Specialist planner for SAM-based tracing sub-goals
+- **BlenderAgent**: Specialist planner for mesh operation sub-goals
 
 ### Matryoshka Tools
-Nested tool hierarchies (like Russian dolls) that reveal tools progressively:
-- LLM sees only top-level `golf_course_builder` tool
-- Selecting it reveals 6 phase tools
-- Each phase tool reveals specific operations
+Nested tool hierarchies (like Russian dolls) that reveal tools progressively, designed to work with GOAP:
+- LLM sees only top-level `golf_course_builder` tool initially
+- GOAP planner selects phase tools based on current goal and state
+- Each phase tool reveals specific operations as actions become relevant
+- **Preconditions** on nested tools ensure valid action sequencing
+- **Effects** update world state to drive planning forward
 
 ### Workflow Gates
 Checkpoints that must be completed before proceeding:

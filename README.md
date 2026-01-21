@@ -8,6 +8,65 @@ This project automates the complete workflow of building golf courses for GSPro,
 
 > See [plan.md](plan.md) for the full automation plan with detailed MCP tool specifications.
 
+## Architecture: GOAP + Nested Tools
+
+This project combines **Goal-Oriented Action Planning (GOAP)** with the **Matryoshka Tool Pattern** to create an intelligent, autonomous course-building agent.
+
+### What is GOAP?
+
+Goal-Oriented Action Planning is an AI architecture originally developed by Jeff Orkin for the game F.E.A.R. to create intelligent NPC behavior. Rather than following rigid scripts, GOAP agents:
+
+1. **Define Goals** - High-level objectives like "build complete golf course" or "generate terrain SVG"
+2. **Track World State** - Current conditions such as "heightmap exists", "SVG validated", "FBX exported"
+3. **Select Actions** - Available operations that have preconditions and effects on world state
+4. **Plan Dynamically** - Automatically determine the sequence of actions needed to achieve the goal from the current state
+
+### Why GOAP for Course Building?
+
+The "None to Done" workflow is an ideal fit for GOAP because:
+
+| GOAP Concept | Course Building Application |
+|--------------|----------------------------|
+| **Goals** | "Build complete course", "Create terrain from LIDAR", "Generate playable asset bundle" |
+| **World State** | Workflow gates: `terrain_ready`, `svg_complete`, `fbx_exported`, `course_complete` |
+| **Actions** | 50+ specialized tools: heightmap generation, SAM tracing, mesh operations, etc. |
+| **Preconditions** | Phase dependencies (e.g., "terrain must exist before overlay can be applied") |
+| **Effects** | Gate completions, file outputs, state transitions |
+
+### GOAP + Nested Tools Synergy
+
+The **Matryoshka Tool Pattern** (nested tools like Russian dolls) complements GOAP perfectly:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  GOAP Planner                                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  Goal: Build Complete Course                              │  │
+│  │  Current State: {heightmap: ✓, svg: ✗, fbx: ✗}           │  │
+│  │  → Plans: phase2a_mcp → svg_convert → blender_mcp → ...  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  Matryoshka Tools (Progressive Disclosure)                │  │
+│  │                                                           │  │
+│  │  golf_course_builder (top-level)                          │  │
+│  │  └── phase2a_mcp ← GOAP selects this                      │  │
+│  │      ├── phase2a_run                                      │  │
+│  │      ├── phase2a_classify     ← Nested tools revealed     │  │
+│  │      └── phase2a_generate_svg ← as needed                 │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits:**
+
+1. **Reduced Complexity** - The planner sees only relevant tools at each decision point, not all 50+ operations
+2. **Dynamic Replanning** - If a step fails (e.g., SAM tracing produces poor results), GOAP can replan with alternative actions
+3. **Modular Goals** - Sub-goals map naturally to tool groups (Phase 1 tools → terrain goal, Phase 2A tools → tracing goal)
+4. **Context Preservation** - Nested tools prevent LLM context pollution while GOAP maintains workflow state
+5. **Flexible Execution** - The agent can adapt to different starting points (partial courses, retries, modifications)
+
 ## Project Components
 
 | Component | Description | Documentation |
