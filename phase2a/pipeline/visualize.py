@@ -124,6 +124,13 @@ class InteractiveMaskSelector:
     """
     Interactive matplotlib-based mask selector with click-to-select functionality.
     Supports buttons and keyboard shortcuts for smoother workflow.
+    
+    Drawing Modes:
+    - SAM mode (default): Draw outline, SAM generates mask with color refinement
+    - Fill mode ('F' key): Draw polygon that gets completely filled (no SAM processing)
+    
+    Additional Features:
+    - Merge ('M' key): Merge all selected masks into one with smooth edges
     """
     
     def __init__(
@@ -157,6 +164,10 @@ class InteractiveMaskSelector:
         self._drawing = False
         self._draw_points = []  # Points collected during drawing
         self._draw_line = None  # Line artist for drawing visualization
+        
+        # Fill mode: if True, draws are filled polygons (no SAM), else SAM outline mode
+        self._fill_mode = False
+        self._mode_text = None  # Text artist showing current mode
         
     def _is_toolbar_active(self):
         """Check if pan or zoom tool is active in the toolbar."""
@@ -247,21 +258,39 @@ class InteractiveMaskSelector:
         
         # Check if this is a point-based selector with outline support
         if hasattr(self.selector, 'draw_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
-            # Draw-to-mask mode: generate mask from outline
-            mask_data = self.selector.draw_to_mask(
-                self._draw_points,
-                self._current_hole,
-                self._current_feature_type
-            )
-            if mask_data:
-                # Track this as the last generated mask for undo
-                self._last_generated_mask_id = mask_data.id
-                # Add to selected masks
-                if mask_data.id not in self.selected_mask_ids:
-                    self.selected_mask_ids.append(mask_data.id)
-                logger.info(f"Generated mask from outline: {mask_data.id}")
+            if self._fill_mode:
+                # Fill mode: generate completely filled polygon (no SAM)
+                if hasattr(self.selector, 'fill_polygon_to_mask'):
+                    mask_data = self.selector.fill_polygon_to_mask(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Generated filled polygon: {mask_data.id}")
+                    else:
+                        logger.warning("Failed to generate filled polygon")
+                else:
+                    logger.warning("Fill mode not supported by this selector")
             else:
-                logger.warning("Failed to generate mask from outline")
+                # SAM mode: generate mask from outline with SAM processing
+                mask_data = self.selector.draw_to_mask(
+                    self._draw_points,
+                    self._current_hole,
+                    self._current_feature_type
+                )
+                if mask_data:
+                    # Track this as the last generated mask for undo
+                    self._last_generated_mask_id = mask_data.id
+                    # Add to selected masks
+                    if mask_data.id not in self.selected_mask_ids:
+                        self.selected_mask_ids.append(mask_data.id)
+                    logger.info(f"Generated mask from outline: {mask_data.id}")
+                else:
+                    logger.warning("Failed to generate mask from outline")
         
         # Clear drawing visualization
         if self._draw_line is not None:
@@ -406,6 +435,34 @@ class InteractiveMaskSelector:
             self._done_pressed = True
             if self.done_callback:
                 self.done_callback()
+        elif event.key == 'f':
+            # F = Toggle fill mode
+            self._fill_mode = not self._fill_mode
+            mode_name = "FILL (polygon)" if self._fill_mode else "SAM (outline)"
+            logger.info(f"Switched to {mode_name} mode")
+            self._redraw()  # Redraw to update mode indicator
+        elif event.key == 'm':
+            # M = Merge selected masks
+            if len(self.selected_mask_ids) >= 2:
+                if hasattr(self.selector, 'merge_selected_masks') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
+                    merged = self.selector.merge_selected_masks(
+                        self.selected_mask_ids.copy(),
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if merged:
+                        # Clear old selections and select merged mask
+                        self.selected_mask_ids.clear()
+                        self.selected_mask_ids.append(merged.id)
+                        self._last_generated_mask_id = merged.id
+                        logger.info(f"Merged masks into: {merged.id}")
+                        self._redraw()
+                    else:
+                        logger.warning("Failed to merge masks")
+                else:
+                    logger.warning("Merge not supported by this selector")
+            else:
+                logger.info("Select at least 2 masks to merge (press M again after selecting)")
         elif event.key == 'escape':
             # Escape = Undo last generated mask (for point-based) or clear selection
             if hasattr(self.selector, 'click_to_mask') and self._last_generated_mask_id:
@@ -527,15 +584,30 @@ class InteractiveMaskSelector:
                             bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
             
             # Add keyboard shortcuts info
-            shortcuts_text = "Draw outline to mark | Scroll: Zoom | Enter/Space: Done | Esc: Undo last"
+            shortcuts_text = "Draw: mark | F: toggle Fill mode | M: merge | Scroll: Zoom | Enter: Done | Esc: Undo"
             self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
                         transform=self.ax.transAxes,
                         fontsize=10, horizontalalignment='center',
                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Add mode indicator
+            mode_name = "FILL" if self._fill_mode else "SAM"
+            mode_color = 'orange' if self._fill_mode else 'lightblue'
+            self._mode_text = self.ax.text(0.98, 0.98, f"Mode: {mode_name}",
+                        transform=self.ax.transAxes,
+                        fontsize=12, verticalalignment='top', horizontalalignment='right',
+                        bbox=dict(boxstyle='round', facecolor=mode_color, alpha=0.8))
         else:
             # Update info text if it exists
             if hasattr(self, '_info_text') and self._info_text is not None:
                 self._info_text.set_text(f"Selected: {len(self.selected_mask_ids)}")
+            
+            # Update mode indicator
+            if hasattr(self, '_mode_text') and self._mode_text is not None:
+                mode_name = "FILL" if self._fill_mode else "SAM"
+                mode_color = 'orange' if self._fill_mode else 'lightblue'
+                self._mode_text.set_text(f"Mode: {mode_name}")
+                self._mode_text.set_bbox(dict(boxstyle='round', facecolor=mode_color, alpha=0.8))
         
         # Use draw_idle for smoother updates (non-blocking)
         self.fig.canvas.draw_idle()

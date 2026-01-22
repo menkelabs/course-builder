@@ -9,7 +9,7 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 import logging
 
-from .masks import MaskGenerator, MaskData
+from .masks import MaskGenerator, MaskData, merge_masks
 from .interactive import InteractiveSelector, HoleSelection, FeatureType
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,166 @@ class PointBasedSelector:
         logger.info(f"Generated mask {mask_id} with area {mask_data.area}")
         return mask_data
     
+    def fill_polygon_to_mask(
+        self,
+        outline_points: List[tuple],
+        hole: int,
+        feature_type: FeatureType,
+    ) -> Optional[MaskData]:
+        """
+        Generate a completely filled mask from a drawn polygon (no SAM processing).
+        
+        This is useful when SAM's color-based refinement misses parts of an area.
+        The user can draw a polygon that will be completely filled.
+        
+        Args:
+            outline_points: List of (x, y) coordinates from the drawn polygon
+            hole: Hole number (1-18)
+            feature_type: Type of feature (green, fairway, bunker, tee)
+            
+        Returns:
+            Generated MaskData or None if generation failed
+        """
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form a polygon")
+            return None
+        
+        # Calculate center for logging
+        xs = [p[0] for p in outline_points]
+        ys = [p[1] for p in outline_points]
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        logger.info(f"Generating filled polygon ({len(outline_points)} points) "
+                   f"for hole {hole}, {feature_type.value}")
+        
+        # Generate filled polygon mask (no SAM processing)
+        mask_data = self.mask_generator.generate_filled_polygon(
+            self.image,
+            outline_points=outline_points,
+            smooth_edges=True,
+        )
+        
+        if mask_data is None:
+            logger.warning(f"Failed to generate filled polygon mask")
+            return None
+        
+        # Create unique ID for this mask
+        mask_id = f"{feature_type.value}_{hole}_fill_{len(self.generated_masks):04d}"
+        mask_data.id = mask_id
+        
+        # Store generated mask
+        self.generated_masks[mask_id] = mask_data
+        
+        # Add to selections
+        if hole not in self.selections:
+            self.selections[hole] = HoleSelection(hole=hole)
+        
+        selection = self.selections[hole]
+        
+        # Add to appropriate feature list
+        if feature_type == FeatureType.GREEN:
+            selection.greens.append(mask_id)
+        elif feature_type == FeatureType.TEE:
+            selection.tees.append(mask_id)
+        elif feature_type == FeatureType.FAIRWAY:
+            selection.fairways.append(mask_id)
+        elif feature_type == FeatureType.BUNKER:
+            selection.bunkers.append(mask_id)
+        elif feature_type == FeatureType.WATER:
+            selection.water.append(mask_id)
+        elif feature_type == FeatureType.ROUGH:
+            selection.rough.append(mask_id)
+        
+        logger.info(f"Generated filled polygon mask {mask_id} with area {mask_data.area}")
+        return mask_data
+
+    def merge_selected_masks(
+        self,
+        mask_ids: List[str],
+        hole: int,
+        feature_type: FeatureType,
+    ) -> Optional[MaskData]:
+        """
+        Merge multiple masks into one with smooth edges.
+        
+        Use this to combine a SAM-generated mask with a manually-drawn
+        filled polygon to create a complete, smooth mask.
+        
+        Args:
+            mask_ids: List of mask IDs to merge
+            hole: Hole number for the merged mask
+            feature_type: Feature type for the merged mask
+            
+        Returns:
+            Merged MaskData or None if merging failed
+        """
+        if len(mask_ids) < 2:
+            logger.warning("Need at least 2 masks to merge")
+            return None
+        
+        # Get the mask data objects
+        masks_to_merge = []
+        for mask_id in mask_ids:
+            if mask_id in self.generated_masks:
+                masks_to_merge.append(self.generated_masks[mask_id])
+            else:
+                logger.warning(f"Mask {mask_id} not found, skipping")
+        
+        if len(masks_to_merge) < 2:
+            logger.warning("Need at least 2 valid masks to merge")
+            return None
+        
+        logger.info(f"Merging {len(masks_to_merge)} masks for hole {hole}, {feature_type.value}")
+        
+        # Create merged mask
+        merged_mask = merge_masks(masks_to_merge, smooth_edges=True)
+        
+        if merged_mask is None:
+            logger.warning("Failed to merge masks")
+            return None
+        
+        # Create unique ID for merged mask
+        merged_id = f"{feature_type.value}_{hole}_merged_{len(self.generated_masks):04d}"
+        merged_mask.id = merged_id
+        
+        # Store the merged mask
+        self.generated_masks[merged_id] = merged_mask
+        
+        # Update selections: remove old mask IDs, add merged mask ID
+        if hole in self.selections:
+            selection = self.selections[hole]
+            
+            # Get the appropriate list based on feature type
+            if feature_type == FeatureType.GREEN:
+                feature_list = selection.greens
+            elif feature_type == FeatureType.TEE:
+                feature_list = selection.tees
+            elif feature_type == FeatureType.FAIRWAY:
+                feature_list = selection.fairways
+            elif feature_type == FeatureType.BUNKER:
+                feature_list = selection.bunkers
+            elif feature_type == FeatureType.WATER:
+                feature_list = selection.water
+            elif feature_type == FeatureType.ROUGH:
+                feature_list = selection.rough
+            else:
+                feature_list = []
+            
+            # Remove the old mask IDs that were merged
+            for old_id in mask_ids:
+                if old_id in feature_list:
+                    feature_list.remove(old_id)
+            
+            # Add the merged mask ID
+            feature_list.append(merged_id)
+        
+        # Optionally: remove old masks from generated_masks
+        # (keeping them for now in case user wants to undo)
+        
+        logger.info(f"Created merged mask {merged_id} with area {merged_mask.area}")
+        return merged_mask
+
     def get_all_masks(self) -> List[MaskData]:
         """Get all generated masks."""
         return list(self.generated_masks.values())

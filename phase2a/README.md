@@ -91,12 +91,29 @@ phase2a select satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o ou
 
 #### GUI Controls
 
-- **Click on mask**: Toggle selection (selected = red highlight)
+- **Draw outline**: Click and drag to draw around a feature - SAM generates a mask
+- **F key**: Toggle between SAM mode and Fill mode
+  - **SAM mode** (default): SAM analyzes the outline and creates a mask based on color/texture
+  - **Fill mode**: Draws a polygon that gets completely filled (no SAM processing)
+- **M key**: Merge all selected masks into one with smooth edges
 - **Enter/Space**: Confirm selection for current feature type
-- **Esc**: Clear current selection
+- **Esc**: Undo last mask generation
+- **Scroll wheel**: Zoom in/out
 - **Done button**: Confirm and move to next feature type
 
 The workflow repeats for each hole until all 18 holes are assigned.
+
+### Mask Completion Workflow
+
+When SAM doesn't fully capture an area due to inconsistent shading:
+
+1. **Draw with SAM mode** (default): Draw around the feature - SAM generates a partial mask
+2. **Press F** to switch to **Fill mode**
+3. **Draw the missing area**: Draw a polygon covering the part SAM missed - it fills completely
+4. **Press M** to **merge** both masks into one with smooth edges
+5. Continue to the next feature
+
+This workflow ensures complete coverage while maintaining smooth, natural-looking boundaries.
 
 ### Visual Workflow Guide
 

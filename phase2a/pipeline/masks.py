@@ -211,6 +211,12 @@ class MaskGenerator:
         Creates a clean polygon boundary (not jagged pixels) that
         encompasses the entire color-determined mask area.
         
+        The smoothing process:
+        1. Applies Gaussian blur to soften jagged pixel edges
+        2. Uses morphological operations to clean up the boundary
+        3. Creates a smooth polygon contour using adaptive approximation
+        4. Ensures all original mask pixels remain covered
+        
         Args:
             mask: Binary mask
             
@@ -223,9 +229,26 @@ class MaskGenerator:
         image_scale = max(width, height) / 1000.0
         
         mask_uint8 = mask.astype(np.uint8) * 255
+        original_area = np.sum(mask)
         
-        # Find contours of the mask
-        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Step 1: Apply Gaussian blur to smooth jagged pixel edges
+        blur_size = max(3, int(5 * image_scale))
+        if blur_size % 2 == 0:
+            blur_size += 1
+        blurred = cv2.GaussianBlur(mask_uint8, (blur_size, blur_size), 0)
+        
+        # Re-threshold - use a lower threshold to ensure we don't lose edge pixels
+        _, smoothed = cv2.threshold(blurred, 100, 255, cv2.THRESH_BINARY)
+        
+        # Step 2: Morphological closing to fill any small gaps
+        kernel_size = max(3, int(5 * image_scale))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        closed = cv2.morphologyEx(smoothed, cv2.MORPH_CLOSE, kernel)
+        
+        # Step 3: Find contours of the smoothed mask
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         if len(contours) == 0:
             return mask
@@ -233,30 +256,40 @@ class MaskGenerator:
         # Get the largest contour
         largest_contour = max(contours, key=cv2.contourArea)
         
-        # Create convex hull to get smooth boundary containing all pixels
-        hull = cv2.convexHull(largest_contour)
-        
-        # If the shape is not convex (like a tee box), use approxPolyDP with small epsilon
-        # to create a smooth polygon that follows the shape but with clean edges
-        epsilon = max(1.0, 2.0 * image_scale)  # Small epsilon for accuracy
+        # Step 4: Apply adaptive polygon approximation for smooth boundary
+        # Use perimeter-based epsilon for consistent smoothing
+        perimeter = cv2.arcLength(largest_contour, True)
+        epsilon = max(1.0, perimeter * 0.003)  # 0.3% of perimeter - smooth but accurate
         smoothed_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
         
-        # Dilate the contour slightly to ensure all original pixels are inside
-        # Then create the polygon
+        # Ensure we have enough points for a natural curve
+        if len(smoothed_contour) < 8:
+            epsilon = max(0.5, perimeter * 0.001)
+            smoothed_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+        
+        # Create final mask from smoothed contour
         final_mask = np.zeros((height, width), dtype=np.uint8)
         cv2.fillPoly(final_mask, [smoothed_contour], 255)
         
-        # Ensure all original mask pixels are included
-        # If any original pixels are outside, use the hull instead
-        original_pixels = np.sum(mask)
+        # Step 5: Ensure all original mask pixels are covered
         covered_pixels = np.sum((final_mask > 0) & mask)
+        coverage = covered_pixels / original_area if original_area > 0 else 1.0
         
-        if covered_pixels < original_pixels * 0.98:  # Less than 98% coverage
-            # Use convex hull to guarantee all pixels are inside
-            cv2.fillPoly(final_mask, [hull], 255)
-            logger.debug(f"Using convex hull (coverage was {100*covered_pixels/original_pixels:.0f}%)")
+        if coverage < 0.98:  # Less than 98% coverage
+            # Dilate the smoothed result to ensure full coverage
+            small_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            dilated = cv2.dilate(final_mask, small_kernel, iterations=2)
+            
+            # Union with original to guarantee coverage
+            combined = cv2.bitwise_or(dilated, mask_uint8)
+            
+            # Re-smooth the combined result
+            combined_blur = cv2.GaussianBlur(combined, (blur_size, blur_size), 0)
+            _, final_mask = cv2.threshold(combined_blur, 100, 255, cv2.THRESH_BINARY)
+            
+            logger.debug(f"Expanded boundary for full coverage (was {100*coverage:.0f}%)")
         
-        logger.debug(f"Polygon smoothing: {np.sum(mask)} -> {np.sum(final_mask > 0)} pixels")
+        logger.debug(f"Polygon smoothing: {original_area} -> {np.sum(final_mask > 0)} pixels")
         
         return final_mask > 0
     
@@ -481,6 +514,128 @@ class MaskGenerator:
                    f"outline_bounds=({min(xs)},{min(ys)})-({max(xs)},{max(ys)})")
         return mask_data
     
+    def generate_filled_polygon(
+        self,
+        image: np.ndarray,
+        outline_points: List[tuple],  # List of (x, y) points from drawn outline
+        smooth_edges: bool = True,
+    ) -> Optional[MaskData]:
+        """
+        Generate a completely filled mask from a drawn polygon (no SAM, no color filtering).
+        
+        This is useful when SAM's color-based refinement misses parts of an area
+        due to inconsistent shading. The user can draw a polygon that will be
+        completely filled without any SAM processing.
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format (used for dimensions)
+            outline_points: List of (x, y) coordinates forming the drawn polygon
+            smooth_edges: If True, applies edge smoothing to the polygon
+            
+        Returns:
+            MaskData object or None if generation fails
+        """
+        import cv2
+        
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form a polygon")
+            return None
+        
+        height, width = image.shape[:2]
+        image_scale = max(width, height) / 1000.0
+        
+        # Convert outline points to integers and clamp to image bounds
+        xs = [int(max(0, min(width - 1, p[0]))) for p in outline_points]
+        ys = [int(max(0, min(height - 1, p[1]))) for p in outline_points]
+        
+        # Calculate center point
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        # Step 1: Smooth the input polygon points before filling
+        # This reduces jaggedness from hand-drawn input
+        if smooth_edges and len(outline_points) > 10:
+            # Convert to contour format for approxPolyDP
+            contour = np.array([[x, y] for x, y in zip(xs, ys)], dtype=np.float32)
+            
+            # Calculate perimeter and use adaptive epsilon
+            perimeter = cv2.arcLength(contour, True)
+            epsilon = max(1.0, perimeter * 0.01)  # 1% of perimeter
+            smoothed_contour = cv2.approxPolyDP(contour, epsilon, True)
+            
+            # Update xs, ys with smoothed points
+            xs = [int(p[0][0]) for p in smoothed_contour]
+            ys = [int(p[0][1]) for p in smoothed_contour]
+        
+        # Step 2: Create polygon mask by filling the (smoothed) outline
+        mask = np.zeros((height, width), dtype=np.uint8)
+        polygon_points = np.array([[x, y] for x, y in zip(xs, ys)], dtype=np.int32)
+        cv2.fillPoly(mask, [polygon_points], 255)
+        
+        original_area = np.sum(mask > 0)
+        
+        # Step 3: Apply additional smoothing to remove pixel-level jaggedness
+        if smooth_edges:
+            # Gaussian blur to soften edges
+            blur_size = max(3, int(5 * image_scale))
+            if blur_size % 2 == 0:
+                blur_size += 1
+            blurred = cv2.GaussianBlur(mask, (blur_size, blur_size), 0)
+            _, smoothed = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
+            
+            # Find contours and simplify
+            contours, _ = cv2.findContours(smoothed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if len(contours) > 0:
+                largest_contour = max(contours, key=cv2.contourArea)
+                
+                # Apply polygon approximation for final smooth boundary
+                perimeter = cv2.arcLength(largest_contour, True)
+                epsilon = max(1.0, perimeter * 0.005)  # 0.5% of perimeter
+                final_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+                
+                # Create final mask
+                mask = np.zeros((height, width), dtype=np.uint8)
+                cv2.fillPoly(mask, [final_contour], 255)
+        
+        # Convert to boolean mask
+        mask = mask > 0
+        smoothed_area = np.sum(mask)
+        
+        logger.info(f"Filled polygon: {original_area} -> {smoothed_area} pixels")
+        
+        # Calculate mask area
+        mask_area = int(np.sum(mask))
+        if mask_area < self.min_mask_region_area:
+            logger.debug(f"Generated mask too small ({mask_area} < {self.min_mask_region_area})")
+            return None
+        
+        # Calculate bounding box
+        y_coords, x_coords = np.where(mask)
+        if len(y_coords) == 0:
+            return None
+        
+        bbox = (
+            int(x_coords.min()),
+            int(y_coords.min()),
+            int(x_coords.max() - x_coords.min()),
+            int(y_coords.max() - y_coords.min()),
+        )
+        
+        mask_data = MaskData(
+            id=f"filled_polygon_{center_x}_{center_y}",
+            mask=mask,
+            area=mask_area,
+            bbox=bbox,
+            predicted_iou=1.0,  # User-defined polygon, assume perfect
+            stability_score=1.0,
+        )
+        
+        logger.info(f"Generated filled polygon mask: area={mask_area}, "
+                   f"center=({center_x},{center_y}), "
+                   f"bounds=({min(xs)},{min(ys)})-({max(xs)},{max(ys)})")
+        return mask_data
+
     def generate_from_point(
         self,
         image: np.ndarray,
@@ -691,6 +846,186 @@ class MaskGenerator:
         
         logger.info(f"Loaded {len(masks)} masks from {masks_dir}")
         return masks
+
+
+def merge_masks(
+    masks: List[MaskData],
+    smooth_edges: bool = True,
+    new_id: Optional[str] = None,
+) -> Optional[MaskData]:
+    """
+    Merge multiple masks into a single mask with smooth edges.
+    
+    This is useful when a SAM-generated mask doesn't fully cover an area
+    and you want to combine it with a manually-drawn filled polygon.
+    The result is a single mask with smooth, clean boundaries.
+    
+    The smoothing algorithm:
+    1. Combines all masks with OR operation
+    2. Applies Gaussian blur to soften harsh boundaries
+    3. Uses morphological closing to fill gaps between masks
+    4. Applies multiple smoothing passes to eliminate jagged edges
+    5. Creates a clean polygon contour that encompasses all original pixels
+    
+    Args:
+        masks: List of MaskData objects to merge
+        smooth_edges: If True, applies edge smoothing to the merged result
+        new_id: Optional custom ID for the merged mask
+        
+    Returns:
+        Merged MaskData object or None if no masks provided
+    """
+    import cv2
+    from scipy import ndimage
+    
+    if not masks:
+        logger.warning("No masks provided for merging")
+        return None
+    
+    if len(masks) == 1:
+        logger.info("Only one mask provided, returning as-is")
+        return masks[0]
+    
+    # Get image dimensions from first mask
+    first_mask = masks[0].mask
+    height, width = first_mask.shape
+    
+    # Create combined mask by OR-ing all masks together
+    combined_mask = np.zeros((height, width), dtype=bool)
+    for mask_data in masks:
+        combined_mask = combined_mask | mask_data.mask
+    
+    original_area = np.sum(combined_mask)
+    logger.info(f"Combined {len(masks)} masks: total area = {original_area} pixels")
+    
+    if smooth_edges:
+        # Convert to uint8 for OpenCV operations
+        mask_uint8 = combined_mask.astype(np.uint8) * 255
+        
+        # Calculate scale factor for kernel sizes
+        image_scale = max(width, height) / 1000.0
+        
+        # Step 1: Apply Gaussian blur to soften harsh mask boundaries
+        # This helps blend the SAM mask edge with the filled polygon edge
+        blur_size = max(5, int(9 * image_scale))
+        if blur_size % 2 == 0:
+            blur_size += 1
+        blurred = cv2.GaussianBlur(mask_uint8, (blur_size, blur_size), 0)
+        
+        # Re-threshold after blur (this smooths the boundary)
+        _, smoothed = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
+        
+        # Step 2: Morphological closing to fill gaps between merged masks
+        # Use elliptical kernel for more natural curves
+        close_kernel_size = max(5, int(11 * image_scale))
+        if close_kernel_size % 2 == 0:
+            close_kernel_size += 1
+        close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_kernel_size, close_kernel_size))
+        closed = cv2.morphologyEx(smoothed, cv2.MORPH_CLOSE, close_kernel)
+        
+        # Step 3: Ensure we don't lose any original pixels - dilate slightly
+        # then intersect with closed result
+        small_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        original_dilated = cv2.dilate(mask_uint8, small_kernel, iterations=2)
+        
+        # Combine: keep original area + smoothed boundary
+        combined_smoothed = cv2.bitwise_or(closed, original_dilated)
+        
+        # Step 4: Apply another blur + threshold for final smoothing
+        final_blur_size = max(3, int(7 * image_scale))
+        if final_blur_size % 2 == 0:
+            final_blur_size += 1
+        final_blurred = cv2.GaussianBlur(combined_smoothed, (final_blur_size, final_blur_size), 0)
+        _, final_smoothed = cv2.threshold(final_blurred, 127, 255, cv2.THRESH_BINARY)
+        
+        # Step 5: Find contours and create smooth polygon boundary
+        contours, _ = cv2.findContours(final_smoothed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if len(contours) > 0:
+            # Get the largest contour
+            largest_contour = max(contours, key=cv2.contourArea)
+            
+            # Apply contour smoothing using approxPolyDP with adaptive epsilon
+            # Smaller epsilon = more accurate but potentially jaggier
+            # We want smooth but not lose too much detail
+            perimeter = cv2.arcLength(largest_contour, True)
+            epsilon = max(1.0, perimeter * 0.005)  # 0.5% of perimeter
+            smoothed_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+            
+            # If the contour is too simplified, use a smaller epsilon
+            if len(smoothed_contour) < 10:
+                epsilon = max(0.5, perimeter * 0.002)
+                smoothed_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+            
+            # Create final mask from smoothed contour
+            final_mask = np.zeros((height, width), dtype=np.uint8)
+            cv2.fillPoly(final_mask, [smoothed_contour], 255)
+            
+            # CRITICAL: Ensure all original mask pixels are covered
+            # The smoothed boundary must contain the original area
+            covered_pixels = np.sum((final_mask > 0) & combined_mask)
+            coverage_ratio = covered_pixels / original_area if original_area > 0 else 1.0
+            
+            if coverage_ratio < 0.98:  # Less than 98% coverage
+                logger.debug(f"Coverage only {100*coverage_ratio:.0f}%, expanding boundary...")
+                
+                # Dilate the smoothed contour to ensure full coverage
+                dilated_final = cv2.dilate(final_mask, small_kernel, iterations=2)
+                
+                # Blend: union of dilated smooth mask with original
+                expanded = cv2.bitwise_or(dilated_final, mask_uint8)
+                
+                # Re-smooth the expanded mask
+                expanded_blur = cv2.GaussianBlur(expanded, (final_blur_size, final_blur_size), 0)
+                _, expanded_smooth = cv2.threshold(expanded_blur, 100, 255, cv2.THRESH_BINARY)
+                
+                final_mask = expanded_smooth
+            
+            combined_mask = final_mask > 0
+        
+        smoothed_area = np.sum(combined_mask)
+        logger.info(f"Edge smoothing: {original_area} -> {smoothed_area} pixels "
+                   f"({100*smoothed_area/original_area:.0f}% of original)")
+    
+    # Calculate final area
+    mask_area = int(np.sum(combined_mask))
+    if mask_area == 0:
+        logger.warning("Merged mask is empty")
+        return None
+    
+    # Calculate bounding box
+    y_coords, x_coords = np.where(combined_mask)
+    bbox = (
+        int(x_coords.min()),
+        int(y_coords.min()),
+        int(x_coords.max() - x_coords.min()),
+        int(y_coords.max() - y_coords.min()),
+    )
+    
+    # Calculate centroid
+    center_x = int(np.mean(x_coords))
+    center_y = int(np.mean(y_coords))
+    
+    # Generate ID if not provided
+    if new_id is None:
+        mask_ids = "_".join(m.id.split("_")[-1] for m in masks[:3])
+        new_id = f"merged_{mask_ids}_{center_x}_{center_y}"
+    
+    # Calculate average scores from merged masks
+    avg_iou = np.mean([m.predicted_iou for m in masks])
+    avg_stability = np.mean([m.stability_score for m in masks])
+    
+    merged_mask_data = MaskData(
+        id=new_id,
+        mask=combined_mask,
+        area=mask_area,
+        bbox=bbox,
+        predicted_iou=avg_iou,
+        stability_score=avg_stability,
+    )
+    
+    logger.info(f"Merged {len(masks)} masks into '{new_id}': area={mask_area}, center=({center_x},{center_y})")
+    return merged_mask_data
 
 
 # Standalone function for simple usage
