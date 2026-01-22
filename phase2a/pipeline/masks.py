@@ -742,6 +742,74 @@ class MaskGenerator:
         logger.debug(f"Generated mask from point ({x}, {y}): area={mask_area}, score={score:.3f}")
         return mask_data
     
+    def generate_from_box(
+        self,
+        image: np.ndarray,
+        box: tuple,  # (x1, y1, x2, y2)
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask from a bounding box prompt.
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format
+            box: Bounding box (x1, y1, x2, y2)
+            
+        Returns:
+            MaskData object or None if generation fails
+        """
+        self._load_model()
+        
+        # Set image for predictor
+        self._predictor.set_image(image)
+        
+        # Convert box to numpy array
+        input_box = np.array(box)
+        
+        # Generate mask from box
+        masks, scores, logits = self._predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=input_box[None, :],
+            multimask_output=True,
+        )
+        
+        if len(masks) == 0:
+            return None
+        
+        # Select mask with highest score
+        best_idx = np.argmax(scores)
+        mask = masks[best_idx]
+        score = float(scores[best_idx])
+        
+        # Convert to MaskData
+        mask_area = int(np.sum(mask))
+        if mask_area < self.min_mask_region_area:
+            logger.debug(f"Generated mask too small ({mask_area} < {self.min_mask_region_area})")
+            return None
+        
+        # Calculate bounding box
+        y_coords, x_coords = np.where(mask)
+        if len(y_coords) == 0:
+            return None
+            
+        bbox = (
+            int(x_coords.min()),
+            int(y_coords.min()),
+            int(x_coords.max() - x_coords.min()),
+            int(y_coords.max() - y_coords.min()),
+        )
+        
+        mask_data = MaskData(
+            id=f"box_mask_{box[0]}_{box[1]}",
+            mask=mask,
+            area=mask_area,
+            bbox=bbox,
+            predicted_iou=score,
+            stability_score=score,
+        )
+        
+        return mask_data
+
     def generate(self, image: np.ndarray) -> List[MaskData]:
         """
         Generate masks from an image.

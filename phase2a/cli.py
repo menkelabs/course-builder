@@ -49,6 +49,40 @@ def cli():
 
 @cli.command()
 @click.argument("image", type=click.Path(exists=True, path_type=Path))
+@click.option("--dino-checkpoint", required=True, help="Grounding DINO checkpoint")
+@click.option("--sam-checkpoint", required=True, help="SAM checkpoint")
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("phase2a_output"))
+@click.option("--features", multiple=True, default=["green", "fairway", "bunker", "tee"])
+@click.option("--device", default="cuda")
+def auto_detect(image, dino_checkpoint, sam_checkpoint, output, features, device):
+    """
+    Automatically detect and segment golf course features.
+    
+    Uses Grounding DINO for detection + SAM for segmentation.
+    No API costs - runs 100% locally.
+    """
+    from .pipeline.grounded_sam import GroundedSAM
+    
+    gsam = GroundedSAM(
+        dino_checkpoint=dino_checkpoint,
+        sam_checkpoint=sam_checkpoint,
+        device=device,
+    )
+    
+    # Load image
+    from PIL import Image
+    img = np.array(Image.open(image).convert("RGB"))
+    
+    # Detect and segment
+    results = gsam.detect_and_segment(img, features=list(features))
+    
+    # Output results
+    for feature, masks in results.items():
+        console.print(f"[green]{feature}:[/green] {len(masks)} detected")
+
+
+@cli.command()
+@click.argument("image", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "-o", "--output",
     type=click.Path(path_type=Path),
