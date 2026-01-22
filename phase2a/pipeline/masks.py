@@ -575,7 +575,8 @@ class MaskGenerator:
         original_area = np.sum(mask > 0)
         
         # Step 3: Apply additional smoothing to remove pixel-level jaggedness
-        if smooth_edges:
+        # Skip smoothing for small polygons to avoid eliminating them
+        if smooth_edges and original_area > 500:
             # Gaussian blur to soften edges
             blur_size = max(3, int(5 * image_scale))
             if blur_size % 2 == 0:
@@ -597,6 +598,8 @@ class MaskGenerator:
                 # Create final mask
                 mask = np.zeros((height, width), dtype=np.uint8)
                 cv2.fillPoly(mask, [final_contour], 255)
+        elif smooth_edges and original_area <= 500:
+            logger.info(f"Skipping smoothing for small polygon ({original_area} pixels)")
         
         # Convert to boolean mask
         mask = mask > 0
@@ -606,8 +609,11 @@ class MaskGenerator:
         
         # Calculate mask area
         mask_area = int(np.sum(mask))
-        if mask_area < self.min_mask_region_area:
-            logger.debug(f"Generated mask too small ({mask_area} < {self.min_mask_region_area})")
+        # Use lower threshold for user-drawn polygons (allow smaller areas)
+        min_area = min(50, self.min_mask_region_area)  # At least 50 pixels for fill
+        if mask_area < min_area:
+            logger.warning(f"Generated filled polygon too small ({mask_area} < {min_area})")
+            print(f"[FILL] Polygon too small: {mask_area} pixels (need at least {min_area})")
             return None
         
         # Calculate bounding box

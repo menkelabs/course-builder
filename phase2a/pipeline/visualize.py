@@ -169,6 +169,79 @@ class InteractiveMaskSelector:
         self._fill_mode = False
         self._mode_text = None  # Text artist showing current mode
         
+    def _setup_instructions_panel(self):
+        """Setup the left instructions panel with controls and shortcuts."""
+        ax = self.ax_instructions
+        
+        # Title
+        ax.text(0.5, 0.97, "Controls", fontsize=14, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Instructions text
+        instructions = [
+            "",
+            "DRAWING:",
+            "  Click+drag to outline",
+            "  a feature area",
+            "",
+            "KEYBOARD:",
+            "  F = Toggle Fill mode",
+            "      SAM: analyzes color",
+            "      FILL: exact polygon",
+            "",
+            "  M = Merge masks",
+            "",
+            "  Esc = Undo last",
+            "",
+            "  Enter/Space = Done",
+            "",
+            "MOUSE:",
+            "  Scroll = Zoom in/out",
+            "  Drag = Pan (toolbar)",
+            "",
+            "─" * 15,
+        ]
+        
+        y_pos = 0.90
+        for line in instructions:
+            ax.text(0.05, y_pos, line, fontsize=9, fontfamily='monospace',
+                    ha='left', va='top', transform=ax.transAxes)
+            y_pos -= 0.04
+        
+        # Mode indicator (will be updated in _update_instructions)
+        self._mode_label = ax.text(0.5, 0.22, "Mode: SAM", fontsize=12, fontweight='bold',
+                                   ha='center', va='top', transform=ax.transAxes,
+                                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
+        
+        # Selected count
+        self._selected_label = ax.text(0.5, 0.14, "Selected: 0", fontsize=11,
+                                       ha='center', va='top', transform=ax.transAxes,
+                                       bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
+        
+        # Current task hint
+        self._task_label = ax.text(0.5, 0.06, "", fontsize=9, style='italic',
+                                   ha='center', va='top', transform=ax.transAxes,
+                                   wrap=True)
+    
+    def _update_instructions(self):
+        """Update the dynamic parts of the instructions panel."""
+        if not hasattr(self, '_mode_label'):
+            return
+        
+        # Update mode
+        mode_name = "FILL" if self._fill_mode else "SAM"
+        mode_color = 'orange' if self._fill_mode else 'lightblue'
+        self._mode_label.set_text(f"Mode: {mode_name}")
+        self._mode_label.set_bbox(dict(boxstyle='round', facecolor=mode_color, alpha=0.9))
+        
+        # Update selected count
+        self._selected_label.set_text(f"Selected: {len(self.selected_mask_ids)}")
+        
+        # Update task hint based on context
+        if hasattr(self, '_current_feature_type') and hasattr(self, '_current_hole'):
+            feature_name = self._current_feature_type.value if self._current_feature_type else "feature"
+            self._task_label.set_text(f"Draw {feature_name} for hole {self._current_hole}")
+
     def _is_toolbar_active(self):
         """Check if pan or zoom tool is active in the toolbar."""
         try:
@@ -256,11 +329,39 @@ class InteractiveMaskSelector:
             self.fig.canvas.draw_idle()
             return
         
+        # Process events before heavy SAM work to keep GUI responsive
+        try:
+            self.fig.canvas.flush_events()
+        except:
+            pass
+        
         # Check if this is a point-based selector with outline support
         if hasattr(self.selector, 'draw_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
             if self._fill_mode:
-                # Fill mode: generate completely filled polygon (no SAM)
-                if hasattr(self.selector, 'fill_polygon_to_mask'):
+                # Fill mode: generate filled polygon and AUTO-MERGE with last mask
+                print(f"[FILL MODE] Processing {len(self._draw_points)} draw points")
+                if hasattr(self.selector, 'fill_and_merge'):
+                    # Use auto-merge fill if available
+                    mask_data = self.selector.fill_and_merge(
+                        self._draw_points,
+                        self._last_generated_mask_id,  # Merge with this mask
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        # Remove old mask from selection if it was replaced
+                        if self._last_generated_mask_id and self._last_generated_mask_id in self.selected_mask_ids:
+                            self.selected_mask_ids.remove(self._last_generated_mask_id)
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Fill merged into: {mask_data.id}")
+                        print(f"[FILL MODE] Merged into: {mask_data.id}")
+                    else:
+                        logger.warning("Failed to fill and merge")
+                        print("[FILL MODE] Failed - draw a larger area")
+                elif hasattr(self.selector, 'fill_polygon_to_mask'):
+                    # Fallback to separate fill
                     mask_data = self.selector.fill_polygon_to_mask(
                         self._draw_points,
                         self._current_hole,
@@ -271,10 +372,13 @@ class InteractiveMaskSelector:
                         if mask_data.id not in self.selected_mask_ids:
                             self.selected_mask_ids.append(mask_data.id)
                         logger.info(f"Generated filled polygon: {mask_data.id}")
+                        print(f"[FILL MODE] Created separate fill: {mask_data.id}")
                     else:
                         logger.warning("Failed to generate filled polygon")
+                        print("[FILL MODE] Failed to generate filled polygon")
                 else:
                     logger.warning("Fill mode not supported by this selector")
+                    print("[FILL MODE] Not supported by this selector")
             else:
                 # SAM mode: generate mask from outline with SAM processing
                 mask_data = self.selector.draw_to_mask(
@@ -299,6 +403,12 @@ class InteractiveMaskSelector:
         
         # Clear draw points
         self._draw_points = []
+        
+        # Process events after mask generation to keep GUI responsive
+        try:
+            self.fig.canvas.flush_events()
+        except:
+            pass
         
         # Redraw to show the new mask
         self._redraw()
@@ -574,40 +684,8 @@ class InteractiveMaskSelector:
                 # We can add them back if needed, but they cause redraw issues
                 pass
         
-        # Add legend and instructions only on first draw
-        if not hasattr(self, '_info_text') or self._info_text is None:
-            info_text = f"Selected: {len(self.selected_mask_ids)}"
-            if self.selected_mask_ids:
-                self._info_text = self.ax.text(0.02, 0.98, info_text,
-                            transform=self.ax.transAxes,
-                            fontsize=12, verticalalignment='top',
-                            bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
-            
-            # Add keyboard shortcuts info
-            shortcuts_text = "Draw: mark | F: toggle Fill mode | M: merge | Scroll: Zoom | Enter: Done | Esc: Undo"
-            self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
-                        transform=self.ax.transAxes,
-                        fontsize=10, horizontalalignment='center',
-                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-            # Add mode indicator
-            mode_name = "FILL" if self._fill_mode else "SAM"
-            mode_color = 'orange' if self._fill_mode else 'lightblue'
-            self._mode_text = self.ax.text(0.98, 0.98, f"Mode: {mode_name}",
-                        transform=self.ax.transAxes,
-                        fontsize=12, verticalalignment='top', horizontalalignment='right',
-                        bbox=dict(boxstyle='round', facecolor=mode_color, alpha=0.8))
-        else:
-            # Update info text if it exists
-            if hasattr(self, '_info_text') and self._info_text is not None:
-                self._info_text.set_text(f"Selected: {len(self.selected_mask_ids)}")
-            
-            # Update mode indicator
-            if hasattr(self, '_mode_text') and self._mode_text is not None:
-                mode_name = "FILL" if self._fill_mode else "SAM"
-                mode_color = 'orange' if self._fill_mode else 'lightblue'
-                self._mode_text.set_text(f"Mode: {mode_name}")
-                self._mode_text.set_bbox(dict(boxstyle='round', facecolor=mode_color, alpha=0.8))
+        # Update the instructions panel on the left
+        self._update_instructions()
         
         # Use draw_idle for smoother updates (non-blocking)
         self.fig.canvas.draw_idle()
@@ -628,16 +706,18 @@ class InteractiveMaskSelector:
             # Original selector
             masks = list(self.selector.masks.values())
         
-        # Create figure with space for button and toolbar
-        self.fig = plt.figure(figsize=(16, 13))
+        # Create figure with instructions panel on left, image on right
+        self.fig = plt.figure(figsize=(18, 12))
         
-        # Enable navigation toolbar (zoom/pan) - this is enabled by default in matplotlib
-        # The toolbar allows zooming with mouse wheel and panning by dragging
-        # Click coordinates (event.xdata, event.ydata) are automatically in data coordinates
-        # so they remain accurate even when zoomed/panned
+        # Left panel for instructions (fixed width)
+        self.ax_instructions = self.fig.add_axes([0.01, 0.05, 0.14, 0.90])
+        self.ax_instructions.set_facecolor('#f0f0f0')
+        self.ax_instructions.set_xticks([])
+        self.ax_instructions.set_yticks([])
+        self._setup_instructions_panel()
         
-        # Main image axes
-        self.ax = self.fig.add_axes([0, 0.05, 1, 0.93])  # Leave space at bottom for button
+        # Main image axes (to the right of instructions)
+        self.ax = self.fig.add_axes([0.16, 0.05, 0.83, 0.93])
         
         # Enable mouse wheel zoom explicitly
         # Connect scroll event for zoom
@@ -696,9 +776,13 @@ class InteractiveMaskSelector:
         # Show and wait for done if blocking
         if block:
             
-            # Wait for done signal
+            # Wait for done signal with frequent event processing
             while not self._done_pressed:
-                plt.pause(0.1)  # Small pause to allow event processing
+                try:
+                    self.fig.canvas.flush_events()
+                except:
+                    pass
+                plt.pause(0.2)  # Longer pause to reduce CPU and prevent "not responding"
             
             # Don't close the figure - just reset the done flag
             # This allows the same window to be reused for the next feature

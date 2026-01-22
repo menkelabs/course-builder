@@ -1,7 +1,13 @@
 """
 SVG Generation Module
 
-Generates structured SVG files with per-hole layers and OPCD color classes.
+Generates structured SVG files with per-hole layers in Inkscape-compatible format.
+
+Output format matches the RockRidge_No_Overlay.svg reference:
+- Inline styles with opacity:0.5;fill:#XXXXXX
+- inkscape:label on paths for feature type identification
+- Layer groups with inkscape:groupmode="layer" and inkscape:label="HoleN"
+- Sodipodi namespace for Inkscape compatibility
 """
 
 import json
@@ -17,22 +23,26 @@ logger = logging.getLogger(__name__)
 
 class SVGGenerator:
     """
-    Generate course SVG with structured layers.
+    Generate course SVG with structured layers in Inkscape-compatible format.
     
     Layers:
-    - Hole01 through Hole18
-    - Hole98_CartPaths
-    - Hole99_OuterMesh
+    - Hole1 through Hole18
+    - Hole98 (CartPaths)
+    - Hole99 (OuterMesh)
     
-    Classes (OPCD palette):
-    - .water (Lake)
-    - .bunker (Bunker)
-    - .green (Green)
-    - .fairway (Fairway)
-    - .rough (Rough)
-    - .tee (Tee)
-    - .cart_path (Concrete)
-    - .ignore (neutral)
+    Features are identified by inkscape:label attribute on paths:
+    - rough, semi, fairway, green, tee, bunker, water, cart_path
+    
+    Colors (OPCD palette):
+    - water: #0000C0 (Lake)
+    - bunker: #E5E5AA
+    - green: #BCE5A4
+    - fairway: #43E561
+    - semi: #36B74D (semi-rough)
+    - rough: #278438
+    - tee: #A0E5B8
+    - cart_path: #BEBEBB (Concrete)
+    - hole99: #FF00CB
     """
     
     @staticmethod
@@ -70,14 +80,16 @@ class SVGGenerator:
                     r, g, b, hex_color, name = match.groups()
                     # Extract base name (before dash)
                     base_name = name.split('-')[0].strip().lower()
-                    hex_color = f"#{hex_color.upper()}"
+                    hex_color = f"#{hex_color.lower()}"
                     
                     # Map to feature classes
                     if 'green' in base_name:
                         colors['green'] = hex_color
                     elif 'fairway' in base_name:
                         colors['fairway'] = hex_color
-                    elif 'rough' in base_name and 'deep' not in base_name and 'semi' not in base_name:
+                    elif 'semi' in base_name:
+                        colors['semi'] = hex_color
+                    elif 'rough' in base_name and 'deep' not in base_name:
                         colors['rough'] = hex_color
                     elif 'bunker' in base_name:
                         colors['bunker'] = hex_color
@@ -106,15 +118,16 @@ class SVGGenerator:
     def _get_default_colors() -> Dict[str, str]:
         """Get default OPCD colors (fallback if palette file not found)."""
         return {
-            "water": "#0000C0",      # Lake
-            "bunker": "#E5E5AA",     # Bunker
-            "green": "#BCE5A4",       # Green
-            "fairway": "#43E561",    # Fairway
-            "rough": "#278438",       # Rough
-            "tee": "#A0E5B8",        # Tee
-            "cart_path": "#BEBEBB",   # Concrete
-            "ignore": "#CCCCCC",      # Neutral gray
-            "hole99": "#FF00CB",      # Hole99
+            "water": "#0000c0",      # Lake
+            "bunker": "#e5e5aa",     # Bunker
+            "green": "#bce5a4",      # Green
+            "fairway": "#43e561",    # Fairway
+            "semi": "#36b74d",       # Semi-rough
+            "rough": "#278438",      # Rough
+            "tee": "#a0e5b8",        # Tee
+            "cart_path": "#bebebb",  # Concrete
+            "ignore": "#cccccc",     # Neutral gray
+            "hole99": "#ff00cb",     # Hole99
         }
     
     # OPCD color palette - loaded from GPL file
@@ -125,28 +138,31 @@ class SVGGenerator:
         width: int = 4096,
         height: int = 4096,
         colors: Optional[Dict[str, str]] = None,
-        stroke_width: float = 1.0,
+        opacity: float = 0.5,
         palette_path: Optional[Path] = None,
     ):
         """
         Initialize the SVG generator.
         
         Args:
-            width: SVG width in pixels
-            height: SVG height in pixels
+            width: SVG width in pixels (also used for viewBox)
+            height: SVG height in pixels (also used for viewBox)
             colors: Custom color palette (overrides defaults)
-            stroke_width: Stroke width for paths
+            opacity: Opacity for path fills (default 0.5, matching reference SVG)
             palette_path: Path to color_defaults.gpl palette file (auto-detected if None)
         """
         self.width = width
         self.height = height
+        self.opacity = opacity
         
         # Load OPCD palette from GPL file
         opcd_colors = self.load_opcd_palette(palette_path)
         
         # Merge: OPCD palette -> custom colors -> defaults
         self.colors = {**opcd_colors, **(colors or {})}
-        self.stroke_width = stroke_width
+        
+        # Counter for generating unique path IDs
+        self._path_counter = 0
     
     def _polygon_to_path(self, geometry: Any) -> str:
         """
@@ -166,14 +182,18 @@ class SVGGenerator:
                 return ""
             
             # Start with move to first point
-            path_parts = [f"M {coords[0][0]:.2f} {coords[0][1]:.2f}"]
+            path_parts = [f"m {coords[0][0]:.4f},{coords[0][1]:.4f}"]
             
-            # Line to remaining points
+            # Use relative coordinates (c for curves would be better, but l for lines works)
+            prev_x, prev_y = coords[0]
             for x, y in coords[1:]:
-                path_parts.append(f"L {x:.2f} {y:.2f}")
+                dx = x - prev_x
+                dy = y - prev_y
+                path_parts.append(f"{dx:.4f},{dy:.4f}")
+                prev_x, prev_y = x, y
             
             # Close path
-            path_parts.append("Z")
+            path_parts.append("z")
             
             return " ".join(path_parts)
         
@@ -198,95 +218,156 @@ class SVGGenerator:
             logger.warning(f"Unsupported geometry type: {type(geometry)}")
             return ""
     
-    def _format_hole_id(self, hole: int) -> str:
-        """Format hole number as layer ID."""
-        if hole == 98:
-            return "Hole98_CartPaths"
-        elif hole == 99:
-            return "Hole99_OuterMesh"
+    def _format_layer_id(self, hole: int) -> str:
+        """Format hole number as layer ID (e.g., 'layer1' for hole 1)."""
+        if hole == 99:
+            return "layer1"  # Hole99 is typically first layer
+        elif hole == 98:
+            return f"layer{hole}"
         else:
-            return f"Hole{hole:02d}"
+            # Holes 1-18 get sequential layer IDs after Hole99
+            return f"layer{hole + 1}"
+    
+    def _format_hole_label(self, hole: int) -> str:
+        """Format hole number as inkscape:label (e.g., 'Hole1', 'Hole99')."""
+        return f"Hole{hole}"
+    
+    def _get_next_path_id(self) -> str:
+        """Generate a unique path ID."""
+        self._path_counter += 1
+        return f"path{self._path_counter}"
+    
+    def _format_feature_label(self, feature_class: str, hole: int, index: int = 0) -> str:
+        """
+        Format feature label for inkscape:label attribute.
+        
+        Examples: 'rough', 'green1', 'fairway1-1', 'bunker', 'tee1'
+        """
+        # Map feature class to label format used in reference SVG
+        label_map = {
+            "green": f"green{hole}",
+            "fairway": f"fairway{hole}" if index == 0 else f"fairway{hole}-{index}",
+            "tee": f"tee{hole}" if index == 0 else f"tee{hole}-{index}",
+            "rough": "rough",
+            "semi": "semi" if index == 0 else f"semi-{hole}-{index}",
+            "bunker": "bunker",
+            "water": "water",
+            "cart_path": "cart_path",
+        }
+        return label_map.get(feature_class, feature_class)
     
     def generate(
         self,
         assignments_by_hole: Dict[int, List[HoleAssignment]],
+        document_name: str = "course.svg",
     ) -> str:
         """
-        Generate SVG content from hole assignments.
+        Generate SVG content from hole assignments in Inkscape-compatible format.
         
         Args:
             assignments_by_hole: Dictionary mapping holes to assignments
+            document_name: Name for sodipodi:docname attribute
             
         Returns:
             SVG content as string
         """
-        # Build CSS styles
-        styles = []
-        for feature_class, color in self.colors.items():
-            styles.append(f"    .{feature_class} {{ fill: {color}; stroke: #000; stroke-width: {self.stroke_width}px; }}")
-        
-        style_block = "\n".join(styles)
+        # Reset path counter
+        self._path_counter = 0
         
         # Build layers
         layers = []
         
-        # Process holes in order (1-18, then 98, 99)
-        hole_order = list(range(1, 19)) + [98, 99]
+        # Process holes in order: 99 first (outer mesh), then 1-18, then 98 (cart paths)
+        hole_order = [99] + list(range(1, 19)) + [98]
         
         for hole in hole_order:
             if hole not in assignments_by_hole:
                 continue
             
             assignments = assignments_by_hole[hole]
-            layer_id = self._format_hole_id(hole)
+            layer_id = self._format_layer_id(hole)
+            layer_label = self._format_hole_label(hole)
             
-            # Group paths by feature class for this hole
+            # Track feature counts for generating unique labels
+            feature_counts: Dict[str, int] = {}
+            
+            # Build paths for this hole
             paths = []
             for assignment in assignments:
                 polygon = assignment.polygon
                 path_data = self._polygon_to_path(polygon.geometry)
                 
-                if path_data:
-                    paths.append(
-                        f'      <path class="{polygon.feature_class}" '
-                        f'd="{path_data}" '
-                        f'data-id="{polygon.id}" '
-                        f'data-confidence="{polygon.confidence:.3f}"/>'
-                    )
+                if not path_data:
+                    continue
+                
+                # Get color for this feature
+                feature_class = polygon.feature_class
+                color = self.colors.get(feature_class, self.colors.get("ignore", "#cccccc"))
+                
+                # Generate feature label with index
+                feature_index = feature_counts.get(feature_class, 0)
+                feature_counts[feature_class] = feature_index + 1
+                feature_label = self._format_feature_label(feature_class, hole, feature_index)
+                
+                # Generate unique path ID
+                path_id = self._get_next_path_id()
+                
+                # Build path element with inline style (matching reference format)
+                path_elem = (
+                    f'    <path\n'
+                    f'       style="opacity:{self.opacity};fill:{color}"\n'
+                    f'       d="{path_data}"\n'
+                    f'       id="{path_id}"\n'
+                    f'       inkscape:label="{feature_label}" />'
+                )
+                paths.append(path_elem)
             
             if paths:
-                layer_content = "\n".join(paths)
-                layers.append(
-                    f'  <g id="{layer_id}" inkscape:groupmode="layer" inkscape:label="{layer_id}">\n'
-                    f'{layer_content}\n'
+                paths_content = "\n".join(paths)
+                # Determine layer style
+                layer_style = "display:inline"
+                if hole == 99:
+                    layer_style = "display:inline;opacity:1"
+                
+                layer_elem = (
+                    f'  <g\n'
+                    f'     inkscape:groupmode="layer"\n'
+                    f'     id="{layer_id}"\n'
+                    f'     inkscape:label="{layer_label}"\n'
+                    f'     style="{layer_style}">\n'
+                    f'{paths_content}\n'
                     f'  </g>'
                 )
+                layers.append(layer_elem)
         
         layers_content = "\n".join(layers)
         
-        # Assemble SVG with OPCD palette metadata
-        svg = f'''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-     xmlns:dc="http://purl.org/dc/elements/1.1/"
-     width="{self.width}"
-     height="{self.height}"
-     viewBox="0 0 {self.width} {self.height}">
-  <metadata>
-    <rdf:RDF>
-      <rdf:Description rdf:about="">
-        <dc:title>Golf Course SVG</dc:title>
-        <dc:description>Generated with OPCD v4 palette</dc:description>
-        <dc:subject>Golf Course Mapping</dc:subject>
-      </rdf:Description>
-    </rdf:RDF>
-  </metadata>
-  <defs>
-    <style type="text/css">
-{style_block}
-    </style>
-  </defs>
+        # Assemble SVG with Inkscape-compatible format
+        svg = f'''<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Generated by Phase2A Golf Course Builder -->
+
+<svg
+   version="1.1"
+   id="svg1"
+   width="{self.width}"
+   height="{self.height}"
+   viewBox="0 0 {self.width} {self.height}"
+   sodipodi:docname="{document_name}"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1" />
 {layers_content}
 </svg>'''
         
@@ -307,7 +388,9 @@ class SVGGenerator:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        svg_content = self.generate(assignments_by_hole)
+        # Use filename as document name
+        document_name = output_path.name
+        svg_content = self.generate(assignments_by_hole, document_name=document_name)
         
         with open(output_path, "w") as f:
             f.write(svg_content)

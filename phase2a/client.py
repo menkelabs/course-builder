@@ -429,7 +429,7 @@ class Phase2AClient:
                 width=width,
                 height=height,
                 colors=self.config.svg.colors,
-                stroke_width=self.config.svg.stroke_width,
+                opacity=self.config.svg.opacity,
                 palette_path=palette_path,
             )
         

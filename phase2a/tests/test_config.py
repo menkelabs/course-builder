@@ -71,7 +71,7 @@ class TestSVGConfig:
         config = SVGConfig()
         assert config.width == 4096
         assert config.height == 4096
-        assert config.stroke_width == 1.0
+        assert config.opacity == 0.5
         assert "water" in config.colors
         assert "bunker" in config.colors
         assert "green" in config.colors
