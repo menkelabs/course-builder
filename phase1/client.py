@@ -72,7 +72,7 @@ class Phase1Client:
         else:
             logging.basicConfig(level=logging.INFO)
     
-    def interactive_course_selection(self) -> Dict[str, float]:
+    def interactive_course_selection(self, initial_location: Optional[Dict[str, float]] = None) -> Dict[str, float]:
         """
         Launch QGIS for user to interactively select course boundary.
         
@@ -89,15 +89,20 @@ class Phase1Client:
         if template_path:
             template_path = Path(template_path)
         
-        bounds = interactive_course_selection_workflow(
-            workspace_path=self.state.workspace_path,
-            course_name=self.config.course_name,
-            template_path=template_path,
-            timeout=self.config.interactive.selection_timeout
-        )
-        
-        # Store bounds in config
-        self.config.geographic_bounds = bounds
+        try:
+            bounds = interactive_course_selection_workflow(
+                workspace_path=self.state.workspace_path,
+                course_name=self.config.course_name,
+                template_path=template_path,
+                timeout=self.config.interactive.selection_timeout,
+                initial_location=initial_location
+            )
+            
+            # Store bounds in config
+            self.config.geographic_bounds = bounds
+        except Exception as e:
+            logger.error(f"Interactive selection failed: {e}")
+            raise
         
         logger.info("=" * 60)
         logger.info("Course boundary selection complete!")

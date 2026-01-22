@@ -76,14 +76,71 @@ def launch_qgis_with_template(
         )
         logger.info(f"✓ QGIS launched with project: {project_path}")
         logger.info("")
+        logger.info("")
         logger.info("=" * 60)
-        logger.info("INSTRUCTIONS FOR USER:")
+        logger.info("QGIS PROJECT WITH AUTO-RUN MACROS")
         logger.info("=" * 60)
-        logger.info("1. Navigate to the golf course location in QGIS")
-        logger.info("2. Use the 'Add Polygon Feature' tool to draw around the course")
-        logger.info("3. Draw a polygon covering the entire golf course area")
-        logger.info("4. Save the 'Course Boundary' layer when finished")
-        logger.info("5. Close QGIS or the script will continue automatically")
+        logger.info("")
+        logger.info("📋 MACROS SHOULD AUTO-RUN when QGIS opens!")
+        logger.info("   - fix_blank_map.py (fixes XYZ tile display)")
+        logger.info("   - position_map.py (centers on golf course)")
+        logger.info("")
+        logger.info("⚙️  IF MACROS DON'T RUN (map not positioned):")
+        logger.info("   Go to: Settings -> Options -> General")
+        logger.info("   Set 'Enable macros' to 'Always' or 'Ask'")
+        logger.info("   Then close and reopen the project")
+        logger.info("")
+        
+        # Copy fix blank map script (based on research)
+        fix_script = workspace_path / "fix_blank_map.py"
+        from shutil import copy
+        fix_script_path = Path(__file__).parent / "fix_blank_map.py"
+        if fix_script_path.exists():
+            copy(fix_script_path, fix_script)
+            logger.info("⚠ IF MAP IS STILL BLANK (manual fallback):")
+            logger.info(f"   Open QGIS Python Console (Plugins -> Python Console or Ctrl+Alt+P)")
+            logger.info(f"   Run: exec(open(r'{fix_script}').read())")
+            logger.info("")
+        
+        # Copy helper scripts to workspace
+        auto_boundary_script = workspace_path / "create_square_boundary.py"
+        auto_boundary_script_path = Path(__file__).parent / "create_square_boundary.py"
+        if auto_boundary_script_path.exists():
+            copy(auto_boundary_script_path, auto_boundary_script)
+        
+        diagnostic_script = workspace_path / "test_qgis_tiles.py"
+        test_script_path = Path(__file__).parent / "test_qgis_tiles.py"
+        if test_script_path.exists() and not diagnostic_script.exists():
+            copy(test_script_path, diagnostic_script)
+        
+        # Show streamlined workflow instructions
+        create_boundary_script = workspace_path / "create_boundary.py"
+        logger.info("")
+        logger.info("🎯 WORKFLOW:")
+        logger.info("")
+        logger.info("   1. WAIT for macros to auto-position the map on your course")
+        logger.info("      (Map should center on your golf course automatically)")
+        logger.info("")
+        logger.info("   2. EXPLORE: Use MOUSE WHEEL to zoom, MIDDLE DRAG to pan")
+        logger.info("      Center the map exactly where you want the boundary")
+        logger.info("")
+        if create_boundary_script.exists():
+            logger.info("   3. CREATE BOUNDARY: Open Python Console (Ctrl+Alt+P) and run:")
+            logger.info(f"      exec(open(r'{create_boundary_script}').read())")
+            logger.info("      This creates a 2100m square at the CURRENT map center")
+        else:
+            logger.info("   3. CREATE BOUNDARY: Open Python Console (Ctrl+Alt+P) and run:")
+            logger.info(f"      exec(open(r'{auto_boundary_script}').read())")
+            logger.info("      This creates a 2000m square boundary")
+        logger.info("")
+        logger.info("   4. ADJUST: Drag the box or press V for Vertex Tool to resize")
+        logger.info("")
+        logger.info("   5. SAVE: Right-click 'Course Boundary' -> Export -> Save Features As...")
+        logger.info(f"      Save to: {workspace_path / 'Shapefiles' / 'Course_Boundary.shp'}")
+        logger.info("")
+        logger.info("   📏 Boundary should be SQUARE (same width × height for Unity heightmap)")
+        logger.info("")
+        logger.info("The script will automatically detect when you save the shapefile.")
         logger.info("=" * 60)
         logger.info("")
         
@@ -142,13 +199,180 @@ def _create_minimal_project(project_path: Path, course_name: str) -> Path:
     return project_path
 
 
-def _create_minimal_qgz(project_path: Path, course_name: str) -> Path:
-    """Create a minimal .qgz file (QGIS project is a ZIP archive)."""
+def _create_boundary_script(script_path: Path, initial_location: dict) -> Path:
+    """
+    Create a boundary creation script with coordinates baked in.
+    This avoids relying on project metadata which may not persist.
+    The script will transform coordinates using QGIS's own functions.
+    """
+    lat = initial_location.get('lat', 40.667975)
+    lon = initial_location.get('lon', -74.893919)
+    zoom = initial_location.get('zoom', 15)
+    
+    # Size in meters (2100m = 2000m + 100m buffer)
+    half_size = 1050
+    
+    script_content = f'''"""
+Auto-generated boundary creation script.
+Default coordinates: {lat}, {lon}
+Run this in QGIS Python Console to create the boundary polygon.
+
+The boundary will be created at the CURRENT MAP CENTER - 
+zoom/pan to position the map first, then run this script!
+"""
+
+from qgis.core import (
+    QgsProject,
+    QgsVectorLayer,
+    QgsFeature,
+    QgsGeometry,
+    QgsRectangle,
+    QgsPointXY,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFillSymbol,
+    QgsSingleSymbolRenderer
+)
+
+half_size = {half_size}  # meters (2100m total = 2000m + 100m buffer)
+
+project = QgsProject.instance()
+project_crs = project.crs()
+print("Project CRS:", project_crs.authid())
+
+# Get the CURRENT map canvas center (where user has zoomed/panned to)
+canvas = iface.mapCanvas()
+center_proj = canvas.center()
+
+print(f"Creating boundary at CURRENT MAP CENTER:")
+print(f"  Center in {{project_crs.authid()}}: {{center_proj.x():.2f}}, {{center_proj.y():.2f}}")
+
+# Convert to WGS84 for display
+wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+transform_to_wgs84 = QgsCoordinateTransform(project_crs, wgs84, project)
+center_wgs84 = transform_to_wgs84.transform(center_proj)
+print(f"  Center in WGS84: {{center_wgs84.y():.6f}}, {{center_wgs84.x():.6f}}")
+
+# Calculate bounding box in project CRS
+xmin = center_proj.x() - half_size
+xmax = center_proj.x() + half_size
+ymin = center_proj.y() - half_size
+ymax = center_proj.y() + half_size
+
+print(f"BBox: {{xmin:.2f}}, {{ymin:.2f}} to {{xmax:.2f}}, {{ymax:.2f}}")
+
+# Remove existing Course Boundary layer if it exists
+for layer in list(project.mapLayers().values()):
+    if "Course Boundary" in layer.name():
+        print(f"Removing existing layer: {{layer.name()}}")
+        project.removeMapLayer(layer.id())
+
+# Create memory layer with project CRS
+bbox_layer = QgsVectorLayer(f"Polygon?crs={{project_crs.authid()}}", "Course Boundary", "memory")
+if not bbox_layer.isValid():
+    raise RuntimeError("Failed to create memory layer")
+
+prov = bbox_layer.dataProvider()
+
+# Create rectangle and add feature
+rect = QgsRectangle(xmin, ymin, xmax, ymax)
+feat = QgsFeature()
+feat.setGeometry(QgsGeometry.fromRect(rect))
+prov.addFeatures([feat])
+bbox_layer.updateExtents()
+
+# Style: TRANSPARENT fill, red outline
+from qgis.PyQt.QtGui import QColor
+symbol = QgsFillSymbol.createSimple({{
+    "color": "255,255,255,0",
+    "outline_color": "255,0,0",
+    "outline_width": "2",
+    "outline_style": "solid"
+}})
+symbol.setColor(QColor(0, 0, 0, 0))  # Force transparent
+bbox_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+# Add to project (addMapLayer with True adds to legend)
+project.addMapLayer(bbox_layer, True)
+
+# Ensure layer is visible
+root = project.layerTreeRoot()
+node = root.findLayer(bbox_layer.id())
+if node:
+    node.setItemVisibilityChecked(True)
+    print(f"Layer node found and set visible")
+
+# Make vertex markers bigger for easier editing
+from qgis.core import QgsSettings
+settings = QgsSettings()
+settings.setValue("/qgis/digitizing/marker_size_mm", 5.0)
+settings.setValue("/qgis/digitizing/marker_size", 5)
+
+# Set as active layer and enable editing
+iface.setActiveLayer(bbox_layer)
+bbox_layer.startEditing()
+
+# Zoom to boundary
+try:
+    iface.mapCanvas().setExtent(bbox_layer.extent())
+    iface.mapCanvas().refresh()
+    
+    # Show Advanced Digitizing Toolbar and activate Move Feature tool
+    try:
+        adv_toolbar = iface.advancedDigitizeToolBar()
+        if adv_toolbar:
+            adv_toolbar.show()
+    except:
+        pass
+    
+    # Enable wheel zoom for map navigation independent of the box
+    canvas = iface.mapCanvas()
+    canvas.setWheelFactor(2.0)  # Standard zoom factor
+    canvas.enableAntiAliasing(True)
+    
+    # Activate Move Feature tool (for moving the entire polygon)
+    try:
+        iface.actionMoveFeature().trigger()
+    except:
+        # Fallback to vertex tool if move feature not available
+        iface.actionVertexTool().trigger()
+except NameError:
+    print("iface not found. Layer still created.")
+
+print("=" * 50)
+print("Boundary created at current map center!")
+print(f"Size: {{half_size * 2}}m x {{half_size * 2}}m (includes buffer)")
+print(f"Extent: {{bbox_layer.extent().toString()}}")
+print("=" * 50)
+print("")
+print("NEXT STEPS:")
+print("  1. DRAG the box to reposition it over the course")
+print("  2. Press V for Vertex Tool to resize/reshape corners")
+print("  3. Use MOUSE WHEEL to zoom in/out for detail")
+print("  4. Use MIDDLE MOUSE or SPACE+DRAG to pan")
+print("")
+print("When done, save the boundary layer as a shapefile.")
+'''
+    
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(script_content)
+    return script_path
+
+
+def _create_minimal_qgz(project_path: Path, course_name: str, workspace_path: Path = None) -> Path:
+    """Create a minimal .qgz file (QGIS project is a ZIP archive) with macros enabled."""
     import zipfile
     
     project_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Minimal QGIS project XML
+    # Get workspace path for macro scripts
+    if workspace_path is None:
+        workspace_path = project_path.parent
+    
+    # Build macro code
+    macro_code = _build_macro_code(workspace_path)
+    
+    # Minimal QGIS project XML with macros enabled
     minimal_xml = f"""<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
 <qgis version="3.40.14-Bratislava" styleCategories="AllStyleCategories">
   <flags>
@@ -174,6 +398,11 @@ def _create_minimal_qgz(project_path: Path, course_name: str) -> Path:
   <layerTreeGroup>
     <customproperties/>
   </layerTreeGroup>
+  <properties>
+    <Macros>
+      <pythonCode>{_escape_xml(macro_code)}</pythonCode>
+    </Macros>
+  </properties>
 </qgis>
 """
     
@@ -181,8 +410,80 @@ def _create_minimal_qgz(project_path: Path, course_name: str) -> Path:
     with zipfile.ZipFile(project_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("project.qgs", minimal_xml)
     
-    logger.info(f"Created minimal QGIS project: {project_path}")
+    logger.info(f"Created minimal QGIS project with macros: {project_path}")
     return project_path
+
+
+def _escape_xml(text: str) -> str:
+    """Escape special characters for XML."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _build_macro_code(workspace_path: Path) -> str:
+    """Build the Python macro code for QGIS project."""
+    workspace_str = str(workspace_path).replace("\\", "/")
+    
+    return f'''
+def openProject():
+    """Auto-run when QGIS project opens."""
+    from qgis.core import QgsProject
+    from qgis.utils import iface
+    import os
+    
+    # Get workspace path from project location
+    project = QgsProject.instance()
+    project_path = project.absoluteFilePath()
+    if project_path:
+        workspace = os.path.dirname(project_path)
+    else:
+        workspace = r"{workspace_str}"
+    
+    # Scripts to potentially run
+    position_script = os.path.join(workspace, "position_map.py")
+    fix_blank_script = os.path.join(workspace, "fix_blank_map.py")
+    
+    # First, run fix_blank_map if it exists (fixes XYZ tile display issues)
+    if os.path.exists(fix_blank_script):
+        try:
+            exec(open(fix_blank_script).read())
+            print("Ran fix_blank_map.py")
+        except Exception as e:
+            print(f"Error running fix_blank_map.py: {{e}}")
+    
+    # Then run position_map to center on the golf course
+    if os.path.exists(position_script):
+        try:
+            exec(open(position_script).read())
+            print("Ran position_map.py")
+        except Exception as e:
+            print(f"Error running position_map.py: {{e}}")
+    
+    # Show message in QGIS
+    if iface:
+        create_boundary_script = os.path.join(workspace, "create_boundary.py")
+        iface.messageBar().pushMessage(
+            "Course Builder", 
+            "Project loaded! Run create_boundary.py from Python Console (Ctrl+Alt+P) when ready.", 
+            level=0, duration=15
+        )
+        print("=" * 60)
+        print("QGIS Project Loaded!")
+        print("")
+        print("WORKFLOW:")
+        print("1. Use mouse wheel to zoom, middle-drag to pan")
+        print("2. Center the map on your golf course") 
+        print("3. Open Python Console (Ctrl+Alt+P)")
+        print(f"4. Run: exec(open(r'{{create_boundary_script}}').read())")
+        print("5. Adjust the boundary box as needed")
+        print("6. Save the Course Boundary layer as shapefile")
+        print("=" * 60)
+
+def saveProject():
+    pass
+
+def closeProject():
+    pass
+'''
 
 
 def wait_for_boundary_shapefile(
@@ -283,7 +584,8 @@ def interactive_course_selection_workflow(
     workspace_path: Path,
     course_name: str,
     template_path: Optional[Path] = None,
-    timeout: int = 600
+    timeout: int = 1800,
+    initial_location: Optional[Dict[str, float]] = None
 ) -> Dict[str, float]:
     """
     Complete interactive selection workflow.
@@ -297,7 +599,8 @@ def interactive_course_selection_workflow(
         workspace_path: Workspace directory
         course_name: Name of the course
         template_path: Optional path to QGIS template (auto-created if None)
-        timeout: Maximum time to wait for user selection
+        timeout: Maximum time to wait for user selection (default: 1800 = 30 minutes)
+        initial_location: Optional dict with 'lat', 'lon', 'zoom' to set initial map position
     
     Returns:
         Dictionary with geographic bounds
@@ -316,8 +619,20 @@ def interactive_course_selection_workflow(
             # Try Python bindings first, fall back to simple template if it fails
             try:
                 from .qgis_template import create_selection_template
-                create_selection_template(template_path, course_name)
+                create_selection_template(template_path, course_name, initial_location=initial_location)
                 logger.info("✓ Template created with Python bindings")
+                if initial_location:
+                    logger.info(f"  Initial location: {initial_location['lat']:.6f}, {initial_location['lon']:.6f}")
+                    # Create positioning script that will run in QGIS
+                    positioning_script = template_path.parent / "position_map.py"
+                    from .qgis_template_fix import create_map_positioning_script
+                    create_map_positioning_script(positioning_script, initial_location=initial_location)
+                    logger.info(f"  ✓ Created positioning script: {positioning_script}")
+                    
+                    # Create boundary creation script with coordinates baked in
+                    boundary_script = template_path.parent / "create_boundary.py"
+                    _create_boundary_script(boundary_script, initial_location)
+                    logger.info(f"  ✓ Created boundary script: {boundary_script}")
             except (ImportError, Exception) as e:
                 logger.warning(f"Could not create template with Python bindings: {e}")
                 logger.info("Creating minimal template instead (this is OK - QGIS GUI will work fine)...")
@@ -325,13 +640,21 @@ def interactive_course_selection_workflow(
                 setup_script = template_path.parent / "setup_qgis_project.py"
                 from .qgis_template import create_simple_template_script
                 create_simple_template_script(setup_script)
-                # Create minimal empty project
-                _create_minimal_qgz(template_path, course_name)
+                
+                # Also create map positioning script
+                positioning_script = template_path.parent / "position_map.py"
+                from .qgis_template_fix import create_map_positioning_script
+                create_map_positioning_script(positioning_script, initial_location=initial_location)
+                
+                # Create minimal empty project with macros enabled
+                _create_minimal_qgz(template_path, course_name, workspace_path=template_path.parent)
                 logger.info("")
                 logger.info("NOTE: If you see SIP errors in QGIS, that's OK!")
                 logger.info("The QGIS GUI will still work for drawing boundaries.")
-                logger.info("You can optionally run the setup script in QGIS Python console if needed.")
-                logger.info(f"Setup script: {setup_script}")
+                logger.info("")
+                logger.info("If layers are not visible or map is not positioned:")
+                logger.info(f"  1. Open QGIS Python Console (Plugins -> Python Console)")
+                logger.info(f"  2. Run: exec(open('{positioning_script}').read())")
                 logger.info("")
     
     # Launch QGIS

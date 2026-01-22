@@ -27,6 +27,7 @@ class GDALConfig:
     heightmap_size: int = 4097  # Unity heightmap size
     overlay_size: int = 8192  # Overlay image size
     overlay_quality: int = 95  # JPEG quality for overlays
+    overlay_max_zoom: int = 19  # Max zoom for overlay export (PDF recommends 19, default is 20)
 
 
 @dataclass
@@ -42,13 +43,33 @@ class WorkspaceConfig:
 
 
 @dataclass
+class LocationConfig:
+    """Default location configuration for map positioning."""
+    address: Optional[str] = None  # Full address string
+    zip_code: Optional[str] = None  # ZIP/postal code
+    city: Optional[str] = None  # City name
+    state: Optional[str] = None  # State/province
+    country: Optional[str] = None  # Country (default: "US")
+    center_lat: Optional[float] = None  # Direct latitude coordinate
+    center_lon: Optional[float] = None  # Direct longitude coordinate
+    zoom_level: int = 15  # Recommended: 15-16 for viewing/drawing boundary (shows full course)
+    # Zoom level guide:
+    # - 12-13: Very wide view (entire region)
+    # - 14-15: Good for seeing full golf course (RECOMMENDED for boundary drawing)
+    # - 16-17: Closer view (individual holes visible)
+    # - 18-19: Very close (individual features)
+    # - 20: Maximum detail (may not be available everywhere)
+
+
+@dataclass
 class InteractiveConfig:
     """Configuration for interactive QGIS selection."""
     enable_interactive: bool = True
     template_qgz: Optional[Path] = None
     boundary_layer_name: str = "Course Boundary"
-    selection_timeout: int = 600  # seconds (10 minutes)
+    selection_timeout: int = 1800  # seconds (30 minutes)
     auto_continue: bool = True  # Continue pipeline after selection
+    location: Optional[LocationConfig] = None  # Default location for map positioning
 
 
 @dataclass
@@ -59,6 +80,7 @@ class Phase1Config:
     qgis: QGISConfig = field(default_factory=QGISConfig)
     gdal: GDALConfig = field(default_factory=GDALConfig)
     interactive: InteractiveConfig = field(default_factory=InteractiveConfig)
+    location: LocationConfig = field(default_factory=LocationConfig)  # Default location
     geographic_bounds: Optional[Dict[str, float]] = None  # From user selection
     verbose: bool = False
     
@@ -81,8 +103,16 @@ class Phase1Config:
         """Create config from dictionary."""
         workspace = WorkspaceConfig(**data.get("workspace", {}))
         qgis = QGISConfig(**data.get("qgis", {}))
-        gdal = GDALConfig(**data.get("gdal", {}))
-        interactive = InteractiveConfig(**data.get("interactive", {}))
+        gdal_data = data.get("gdal", {})
+        # Handle overlay_max_zoom if not present (backward compatibility)
+        if "overlay_max_zoom" not in gdal_data:
+            gdal_data["overlay_max_zoom"] = 19
+        gdal = GDALConfig(**gdal_data)
+        location = LocationConfig(**data.get("location", {}))
+        interactive_data = data.get("interactive", {})
+        if "location" in interactive_data:
+            interactive_data["location"] = LocationConfig(**interactive_data["location"])
+        interactive = InteractiveConfig(**interactive_data)
         
         return cls(
             course_name=data.get("course_name", "Course"),
@@ -90,6 +120,7 @@ class Phase1Config:
             qgis=qgis,
             gdal=gdal,
             interactive=interactive,
+            location=location,
             geographic_bounds=data.get("geographic_bounds"),
             verbose=data.get("verbose", False),
         )
@@ -108,6 +139,25 @@ class Phase1Config:
     
     def to_dict(self) -> dict:
         """Convert config to dictionary."""
+        interactive_dict = {
+            "enable_interactive": self.interactive.enable_interactive,
+            "template_qgz": str(self.interactive.template_qgz) if self.interactive.template_qgz else None,
+            "boundary_layer_name": self.interactive.boundary_layer_name,
+            "selection_timeout": self.interactive.selection_timeout,
+            "auto_continue": self.interactive.auto_continue,
+        }
+        if self.interactive.location:
+            interactive_dict["location"] = {
+                "address": self.interactive.location.address,
+                "zip_code": self.interactive.location.zip_code,
+                "city": self.interactive.location.city,
+                "state": self.interactive.location.state,
+                "country": self.interactive.location.country,
+                "center_lat": self.interactive.location.center_lat,
+                "center_lon": self.interactive.location.center_lon,
+                "zoom_level": self.interactive.location.zoom_level,
+            }
+        
         return {
             "course_name": self.course_name,
             "workspace": {
@@ -131,13 +181,17 @@ class Phase1Config:
                 "overlay_size": self.gdal.overlay_size,
                 "overlay_quality": self.gdal.overlay_quality,
             },
-            "interactive": {
-                "enable_interactive": self.interactive.enable_interactive,
-                "template_qgz": str(self.interactive.template_qgz) if self.interactive.template_qgz else None,
-                "boundary_layer_name": self.interactive.boundary_layer_name,
-                "selection_timeout": self.interactive.selection_timeout,
-                "auto_continue": self.interactive.auto_continue,
+            "location": {
+                "address": self.location.address,
+                "zip_code": self.location.zip_code,
+                "city": self.location.city,
+                "state": self.location.state,
+                "country": self.location.country,
+                "center_lat": self.location.center_lat,
+                "center_lon": self.location.center_lon,
+                "zoom_level": self.location.zoom_level,
             },
+            "interactive": interactive_dict,
             "geographic_bounds": self.geographic_bounds,
             "verbose": self.verbose,
         }
