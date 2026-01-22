@@ -21,13 +21,29 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "click>=8.1.0",
-    "rich>=13.0.0",
-    "pydantic>=2.0.0",
-    "pyyaml>=6.0.0",
-    "rasterio>=1.3.0",
-    "geopandas>=0.14.0",
-    "numpy>=1.24.0",
+    "click==8.3.1",
+    "rich==14.2.0",
+    "pydantic==2.12.5",
+    "pydantic-core==2.41.5",
+    "pyyaml==6.0.3",
+    "rasterio==1.4.4",
+    "geopandas==1.1.2",
+    "numpy==2.2.6",
+    "shapely==2.1.2",
+    "pyproj==3.7.1",
+    "pyogrio==0.12.1",
+    "affine==2.4.0",
+    "attrs==25.4.0",
+    "certifi==2026.1.4",
+    "cffi==2.0.0",
+    "click-plugins==1.1.1.2",
+    "cligj==0.7.2",
+    "packaging==25.0",
+    "pandas==2.3.3",
+    "python-dateutil==2.9.0.post0",
+    "pytz==2025.2",
+    "typing-extensions==4.15.0",
+    "tzdata==2025.3",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +51,7 @@ dependencies = [
 # For automation, use qgis_process CLI tool (included with QGIS) or PyQGIS when running
 # within QGIS's Python environment. See README.md for installation instructions.
 dev = [
-    "pytest>=7.0.0",
+    "pytest==9.0.2",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",

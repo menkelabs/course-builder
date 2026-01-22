@@ -15,32 +15,63 @@ Automated terrain preparation for golf course creation using QGIS and GDAL. Proc
 
 ## Installation
 
-1. Create a virtual environment:
+This project uses a **shared virtual environment at the project root**.
+
+1. Activate the root virtual environment:
 ```bash
-python3 -m venv .venv
+# From project root
+cd /path/to/course-builder
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-2. Install dependencies:
+2. Install Phase 1 in editable mode:
 ```bash
 cd phase1
 pip install -e .
 ```
 
+**Note**: The `.venv` is located at the project root (`course-builder/.venv`), not in the `phase1/` directory.
+
 3. Install QGIS and GDAL:
-   - **QGIS**: Install QGIS Desktop (includes PyQGIS bindings) or use `qgis_process` CLI
+   - **QGIS**: Run automated setup: `python -m phase1.qgis_setup.setup_qgis`
    - **GDAL**: Install via system package manager or conda
-   - See [QGIS Installation](https://qgis.org/download/) and [GDAL Installation](https://gdal.org/download.html)
+   - See [qgis_setup/QGIS_SETUP.md](qgis_setup/QGIS_SETUP.md) for manual installation
 
 ## Usage
 
-### Run Complete Pipeline
+### Interactive Course Selection (Recommended)
 
-Run the full Phase 1 pipeline:
+**Important:** Activate the root virtual environment first:
+```bash
+# From project root
+source .venv/bin/activate
+```
+
+Then launch QGIS to visually select the course boundary:
 
 ```bash
-phase1 run --course-name MyCourse -o workspace/
+python -m phase1.cli interactive-select --course-name MyCourse -o workspace/
 ```
+
+This will:
+1. Open QGIS with satellite imagery
+2. Let you draw a polygon around the golf course
+3. Automatically extract coordinates
+4. Save bounds for automated processing
+
+### Run Complete Pipeline
+
+Run the full Phase 1 pipeline (includes interactive selection if no bounds exist):
+
+```bash
+# Activate venv first
+source .venv/bin/activate
+
+# Run pipeline
+python -m phase1.cli run --course-name MyCourse -o workspace/
+```
+
+**Note:** See [QUICK_START.md](QUICK_START.md) for detailed setup instructions.
 
 **Options:**
 - `-c, --config`: YAML or JSON configuration file
@@ -50,7 +81,10 @@ phase1 run --course-name MyCourse -o workspace/
 
 **Example with config file:**
 ```bash
-phase1 run -c config.yaml -v
+# Activate venv first
+source .venv/bin/activate
+
+python -m phase1.cli run -c config.yaml -v
 ```
 
 ### Initialize Configuration File
@@ -58,7 +92,10 @@ phase1 run -c config.yaml -v
 Generate a default configuration file:
 
 ```bash
-phase1 init-config -o config.yaml
+# Activate venv first
+source .venv/bin/activate
+
+python -m phase1.cli init-config -o config.yaml
 ```
 
 **Options:**
@@ -70,7 +107,10 @@ phase1 init-config -o config.yaml
 Validate pipeline output:
 
 ```bash
-phase1 validate workspace/
+# Activate venv first
+source .venv/bin/activate
+
+python -m phase1.cli validate workspace/
 ```
 
 ### Display Pipeline Information
@@ -78,8 +118,25 @@ phase1 validate workspace/
 Show pipeline information and usage:
 
 ```bash
-phase1 info
+# Activate venv first
+source .venv/bin/activate
+
+python -m phase1.cli info
 ```
+
+### Interactive Selection Workflow
+
+The interactive selection workflow combines human guidance with automation:
+
+1. **User selects area visually** - Open QGIS, navigate to course, draw boundary
+2. **Script extracts coordinates** - Automatically reads your selection
+3. **Automated processing continues** - DEM merging, heightmaps, Unity conversion
+
+This approach provides:
+- Visual accuracy (see exactly what you're selecting)
+- Flexibility (works with any coordinate system)
+- User control (adjust selection before committing)
+- Full automation (once selected, everything else is automated)
 
 ## Pipeline Stages
 

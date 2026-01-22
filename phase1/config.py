@@ -6,7 +6,7 @@ Configuration classes for QGIS/GDAL terrain preparation pipeline.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 import yaml
 
@@ -42,12 +42,24 @@ class WorkspaceConfig:
 
 
 @dataclass
+class InteractiveConfig:
+    """Configuration for interactive QGIS selection."""
+    enable_interactive: bool = True
+    template_qgz: Optional[Path] = None
+    boundary_layer_name: str = "Course Boundary"
+    selection_timeout: int = 600  # seconds (10 minutes)
+    auto_continue: bool = True  # Continue pipeline after selection
+
+
+@dataclass
 class Phase1Config:
     """Main configuration for Phase 1 pipeline."""
     course_name: str = "Course"
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     qgis: QGISConfig = field(default_factory=QGISConfig)
     gdal: GDALConfig = field(default_factory=GDALConfig)
+    interactive: InteractiveConfig = field(default_factory=InteractiveConfig)
+    geographic_bounds: Optional[Dict[str, float]] = None  # From user selection
     verbose: bool = False
     
     @classmethod
@@ -70,12 +82,15 @@ class Phase1Config:
         workspace = WorkspaceConfig(**data.get("workspace", {}))
         qgis = QGISConfig(**data.get("qgis", {}))
         gdal = GDALConfig(**data.get("gdal", {}))
+        interactive = InteractiveConfig(**data.get("interactive", {}))
         
         return cls(
             course_name=data.get("course_name", "Course"),
             workspace=workspace,
             qgis=qgis,
             gdal=gdal,
+            interactive=interactive,
+            geographic_bounds=data.get("geographic_bounds"),
             verbose=data.get("verbose", False),
         )
     
@@ -116,5 +131,13 @@ class Phase1Config:
                 "overlay_size": self.gdal.overlay_size,
                 "overlay_quality": self.gdal.overlay_quality,
             },
+            "interactive": {
+                "enable_interactive": self.interactive.enable_interactive,
+                "template_qgz": str(self.interactive.template_qgz) if self.interactive.template_qgz else None,
+                "boundary_layer_name": self.interactive.boundary_layer_name,
+                "selection_timeout": self.interactive.selection_timeout,
+                "auto_continue": self.interactive.auto_continue,
+            },
+            "geographic_bounds": self.geographic_bounds,
             "verbose": self.verbose,
         }

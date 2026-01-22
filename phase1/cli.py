@@ -148,6 +148,88 @@ def validate(workspace_dir: Path):
 
 
 @cli.command()
+@click.option(
+    "--course-name",
+    type=str,
+    required=True,
+    help="Course name",
+)
+@click.option(
+    "-o", "--output",
+    type=click.Path(path_type=Path),
+    default=Path("workspace"),
+    help="Workspace output directory",
+)
+@click.option(
+    "--template",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to QGIS template project (.qgz)",
+)
+@click.option(
+    "--timeout",
+    type=int,
+    default=600,
+    help="Timeout in seconds for user selection (default: 600)",
+)
+@click.option(
+    "-v", "--verbose",
+    is_flag=True,
+    help="Enable verbose output",
+)
+def interactive_select(
+    course_name: str,
+    output: Path,
+    template: Optional[Path],
+    timeout: int,
+    verbose: bool,
+):
+    """
+    Launch QGIS for interactive course boundary selection.
+    
+    This opens QGIS with a template project. Draw a polygon around
+    the golf course, then save it. The script will continue automatically.
+    """
+    setup_logging(verbose)
+    
+    console.print("\n[bold blue]Interactive Course Selection[/bold blue]")
+    console.print(f"Course: {course_name}")
+    console.print(f"Workspace: {output}\n")
+    
+    try:
+        cfg = Phase1Config()
+        cfg.course_name = course_name
+        cfg.workspace.workspace_path = output
+        cfg.interactive.enable_interactive = True
+        cfg.interactive.selection_timeout = timeout
+        if template:
+            cfg.interactive.template_qgz = template
+        cfg.verbose = verbose
+        
+        client = Phase1Client(cfg)
+        bounds = client.interactive_course_selection()
+        
+        console.print("\n[green]✓ Course boundary selected![/green]")
+        console.print(f"\nBounds:")
+        console.print(f"  North: {bounds['northLat']:.6f}")
+        console.print(f"  South: {bounds['southLat']:.6f}")
+        console.print(f"  East:  {bounds['eastLon']:.6f}")
+        console.print(f"  West:  {bounds['westLon']:.6f}")
+        console.print(f"  Area:  {bounds['area_km2']:.2f} km²")
+        
+        # Save bounds JSON path
+        bounds_json = output / "course_bounds.json"
+        console.print(f"\nBounds saved to: {bounds_json}")
+        console.print("\nYou can now run the full pipeline:")
+        console.print(f"  python -m phase1.cli run --course-name {course_name} -o {output}")
+        
+    except Exception as e:
+        console.print(f"\n[red]Error: {e}[/red]")
+        if verbose:
+            console.print_exception()
+        sys.exit(1)
+
+
+@cli.command()
 def info():
     """
     Display Phase 1 pipeline information.
@@ -167,9 +249,14 @@ def info():
         console.print(f"  {stage}: {desc}")
     
     console.print("\n[bold]Usage:[/bold]")
-    console.print("  phase1 run --course-name MyCourse -o workspace/")
-    console.print("  phase1 init-config -o config.yaml")
-    console.print("  phase1 validate ./workspace")
+    console.print("  # Activate root .venv first:")
+    console.print("  source .venv/bin/activate  # (from project root)")
+    console.print("")
+    console.print("  # Then run commands:")
+    console.print("  python -m phase1.cli run --course-name MyCourse -o workspace/")
+    console.print("  python -m phase1.cli interactive-select --course-name MyCourse -o workspace/")
+    console.print("  python -m phase1.cli init-config -o config.yaml")
+    console.print("  python -m phase1.cli validate ./workspace")
 
 
 def main():

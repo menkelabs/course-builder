@@ -72,10 +72,51 @@ class Phase1Client:
         else:
             logging.basicConfig(level=logging.INFO)
     
+    def interactive_course_selection(self) -> Dict[str, float]:
+        """
+        Launch QGIS for user to interactively select course boundary.
+        
+        Returns:
+            Dictionary with geographic bounds (northLat, southLat, eastLon, westLon, etc.)
+        """
+        from .pipeline.interactive_selection import interactive_course_selection_workflow
+        
+        logger.info("=" * 60)
+        logger.info("INTERACTIVE COURSE SELECTION")
+        logger.info("=" * 60)
+        
+        template_path = self.config.interactive.template_qgz
+        if template_path:
+            template_path = Path(template_path)
+        
+        bounds = interactive_course_selection_workflow(
+            workspace_path=self.state.workspace_path,
+            course_name=self.config.course_name,
+            template_path=template_path,
+            timeout=self.config.interactive.selection_timeout
+        )
+        
+        # Store bounds in config
+        self.config.geographic_bounds = bounds
+        
+        logger.info("=" * 60)
+        logger.info("Course boundary selection complete!")
+        logger.info(f"Bounds: N:{bounds['northLat']:.6f}, S:{bounds['southLat']:.6f}, "
+                   f"E:{bounds['eastLon']:.6f}, W:{bounds['westLon']:.6f}")
+        logger.info(f"Area: {bounds['area_km2']:.2f} km²")
+        logger.info("=" * 60)
+        
+        return bounds
+    
     def setup_project(self) -> None:
         """Stage 2: Set up QGIS project and workspace structure."""
         logger.info("Stage 2: Setting up project...")
-        # TODO: Implement project setup
+        
+        # If we have geographic bounds, use them for project setup
+        if self.config.geographic_bounds:
+            logger.info(f"Using geographic bounds from selection: {self.config.geographic_bounds}")
+        
+        # TODO: Implement project setup with bounds
         self.state.completed_stages.append("setup_project")
         logger.info("Project setup complete")
     
@@ -132,15 +173,39 @@ class Phase1Client:
         
         return all_passed
     
-    def run(self) -> PipelineState:
-        """Run the complete Phase 1 pipeline."""
+    def run(self, interactive: bool = True) -> PipelineState:
+        """
+        Run the complete Phase 1 pipeline.
+        
+        Args:
+            interactive: If True and no bounds exist, launch interactive selection
+        """
         logger.info("Running complete Phase 1 pipeline...")
         
+        # Step 1: Interactive selection (if enabled and no bounds)
+        if interactive and self.config.interactive.enable_interactive:
+            if not self.config.geographic_bounds:
+                logger.info("No geographic bounds found. Starting interactive selection...")
+                self.interactive_course_selection()
+            else:
+                logger.info("Using existing geographic bounds from config")
+        
+        # Step 2: Project setup
         self.setup_project()
-        # TODO: Get DEM paths from config or user input
-        # self.merge_dem_tiles(dem_paths)
+        
+        # TODO: Continue with automated processing
+        # Step 3: DEM merging (using bounds to find appropriate tiles)
+        # if self.config.geographic_bounds:
+        #     dem_paths = self._find_dem_tiles_for_bounds(self.config.geographic_bounds)
+        #     self.merge_dem_tiles(dem_paths)
+        
+        # Step 4: Heightmap creation
         # self.create_heightmaps()
+        
+        # Step 5: Unity conversion
         # self.convert_for_unity()
+        
+        # Step 6: Validation
         # self.validate()
         
         logger.info("Pipeline complete!")
