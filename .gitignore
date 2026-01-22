@@ -59,6 +59,7 @@ dmypy.json
 checkpoints/
 *.pth
 *.ckpt
+WIP/
 
 # Output directories
 phase2a_output/
