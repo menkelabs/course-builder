@@ -6,6 +6,10 @@ Automated terrain preparation for golf course creation using QGIS and GDAL. Proc
 
 *Interactive course boundary selection in QGIS with satellite imagery and boundary layer.*
 
+[![QGIS Automation Tutorial](https://img.youtube.com/vi/w6FlVZjydtY/0.jpg)](https://youtu.be/w6FlVZjydtY?si=2da0Iwy3OhZfHy2m)
+
+*Watch the QGIS automation tutorial video*
+
 > **Note**: Phase 1 is one of several sections that will be developed as part of the complete course builder pipeline. See the [main README](../README.md) for an overview of all components and [plan.md](../plan.md) for the full automation specification.
 
 ## Features
