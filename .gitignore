@@ -71,6 +71,7 @@ exports/
 *.jpeg
 *.svg
 !phase2a/resources/*.jpg
+!docs/*.jpg
 
 # Logs
 *.log
