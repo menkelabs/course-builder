@@ -8,6 +8,12 @@ This project automates the complete workflow of building golf courses for GSPro,
 
 > See [plan.md](plan.md) for the full automation plan with detailed MCP tool specifications.
 
+### GUI Preview
+
+![Course Builder Front End](docs/course-build-front-end.jpg)
+
+*This is a rough idea of what the GUI will look like - a chat interface for interacting with the course building agents and tools.*
+
 ## Architecture: GOAP + Nested Tools
 
 This project combines **Goal-Oriented Action Planning (GOAP)** with the **Matryoshka Tool Pattern** to create an intelligent, autonomous course-building agent.
