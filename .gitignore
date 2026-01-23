@@ -60,6 +60,7 @@ checkpoints/
 *.pth
 *.ckpt
 WIP/
+phase2a/resources/archive.zip
 
 # Output directories
 phase2a_output/
