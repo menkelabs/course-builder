@@ -89,6 +89,10 @@ class MaskGenerator:
         # Default 0.5 -> 6.0 LAB (current behavior)
         self.color_tolerance = 6.0
         
+        # Growth limit for region growing (pixels from original polygon boundary)
+        # Default 50 pixels
+        self.growth_limit = 50
+        
         self._sam = None
         self._mask_generator = None
         self._predictor = None
@@ -663,6 +667,194 @@ class MaskGenerator:
         logger.info(f"Generated filled polygon mask: area={mask_area}, "
                    f"center=({center_x},{center_y}), "
                    f"bounds=({min(xs)},{min(ys)})-({max(xs)},{max(ys)})")
+        return mask_data
+
+    def generate_from_polygon_grow(
+        self,
+        image: np.ndarray,
+        outline_points: List[tuple],  # List of (x, y) points forming polygon INSIDE the feature
+        color_sensitivity: float = 0.6,  # 0=strict, 1=loose
+        growth_limit: int = 50,  # Max pixels to grow from polygon boundary
+        smooth_edges: bool = True,
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask by growing outward from a drawn polygon based on color similarity.
+        
+        The polygon should be drawn INSIDE the feature - the algorithm will grow
+        outward until it hits a color boundary or reaches the growth limit.
+        
+        This is a pure region-growing approach (no SAM):
+        1. Fill the drawn polygon as the seed region
+        2. Sample colors from inside the polygon
+        3. Grow outward pixel-by-pixel, adding pixels with similar colors
+        4. Stop when reaching growth_limit or color threshold
+        
+        Args:
+            image: Input image as numpy array (H, W, 3) in RGB format
+            outline_points: List of (x, y) coordinates forming the seed polygon
+            color_sensitivity: 0.0 = strict color matching, 1.0 = loose (default 0.6)
+            growth_limit: Maximum pixels to grow from the original polygon (default 50)
+            smooth_edges: If True, applies edge smoothing to the final mask
+            
+        Returns:
+            MaskData object or None if generation fails
+        """
+        import cv2
+        from skimage import color as skcolor
+        from scipy import ndimage
+        from collections import deque
+        
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form a polygon")
+            return None
+        
+        height, width = image.shape[:2]
+        
+        # Convert outline points to integers and clamp to image bounds
+        xs = [int(max(0, min(width - 1, p[0]))) for p in outline_points]
+        ys = [int(max(0, min(height - 1, p[1]))) for p in outline_points]
+        
+        # Calculate center point
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        # Step 1: Create seed mask from the drawn polygon
+        seed_mask = np.zeros((height, width), dtype=np.uint8)
+        polygon_points = np.array([[x, y] for x, y in zip(xs, ys)], dtype=np.int32)
+        cv2.fillPoly(seed_mask, [polygon_points], 255)
+        
+        seed_area = np.sum(seed_mask > 0)
+        if seed_area < 10:
+            logger.warning(f"Seed polygon too small ({seed_area} pixels)")
+            return None
+        
+        logger.info(f"Seed polygon: {seed_area} pixels, center=({center_x},{center_y})")
+        
+        # Step 2: Convert image to LAB color space for perceptual color distance
+        image_lab = skcolor.rgb2lab(image)
+        
+        # Step 3: Sample reference colors from inside the polygon
+        seed_ys, seed_xs = np.where(seed_mask > 0)
+        sample_indices = np.random.choice(len(seed_ys), min(100, len(seed_ys)), replace=False)
+        sample_colors = [image_lab[seed_ys[i], seed_xs[i]] for i in sample_indices]
+        mean_color = np.mean(sample_colors, axis=0)
+        
+        # Calculate color variance in the seed region
+        color_dists = [np.sqrt(np.sum((c - mean_color) ** 2)) for c in sample_colors]
+        color_std = np.std(color_dists) if len(color_dists) > 1 else 5.0
+        
+        # Step 4: Calculate color tolerance based on sensitivity slider
+        # sensitivity 0 = strict (base_tol), sensitivity 1 = loose (base_tol + 15)
+        # Also factor in the color variance in the seed region
+        base_tolerance = 3.0 + color_std * 0.5  # Adaptive base
+        tolerance_range = 15.0
+        color_tolerance = base_tolerance + color_sensitivity * tolerance_range
+        
+        logger.info(f"Color tolerance: {color_tolerance:.1f} LAB (sensitivity={color_sensitivity:.2f}, seed_std={color_std:.1f})")
+        
+        # Step 5: Region growing using BFS from polygon boundary
+        # Start from boundary pixels of the seed, grow outward
+        grown_mask = seed_mask.copy()
+        
+        # Find boundary pixels of seed (pixels in seed that have a non-seed neighbor)
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        dilated = cv2.dilate(seed_mask, kernel, iterations=1)
+        boundary = dilated - seed_mask
+        
+        # Initialize queue with boundary pixels
+        # Each item is (y, x, distance_from_seed)
+        queue = deque()
+        boundary_ys, boundary_xs = np.where(boundary > 0)
+        for by, bx in zip(boundary_ys, boundary_xs):
+            queue.append((by, bx, 1))
+        
+        # Track visited pixels and their distance
+        visited = np.zeros((height, width), dtype=bool)
+        visited[seed_mask > 0] = True
+        
+        # 8-connected neighbors
+        neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+        
+        pixels_added = 0
+        pixels_rejected = 0
+        
+        while queue:
+            y, x, dist = queue.popleft()
+            
+            # Skip if already visited or beyond growth limit
+            if visited[y, x] or dist > growth_limit:
+                continue
+            
+            visited[y, x] = True
+            
+            # Check color similarity
+            pixel_lab = image_lab[y, x]
+            color_dist = np.sqrt(np.sum((pixel_lab - mean_color) ** 2))
+            
+            if color_dist <= color_tolerance:
+                # Add to grown mask
+                grown_mask[y, x] = 255
+                pixels_added += 1
+                
+                # Add unvisited neighbors to queue
+                for dy, dx in neighbors:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < height and 0 <= nx < width and not visited[ny, nx]:
+                        queue.append((ny, nx, dist + 1))
+            else:
+                pixels_rejected += 1
+        
+        logger.info(f"Region growing: added {pixels_added} pixels, rejected {pixels_rejected} "
+                   f"(growth_limit={growth_limit}px)")
+        
+        # Step 6: Keep only the connected component containing the center
+        labeled_array, num_features = ndimage.label(grown_mask)
+        if num_features > 1:
+            center_label = labeled_array[center_y, center_x]
+            if center_label > 0:
+                grown_mask = (labeled_array == center_label).astype(np.uint8) * 255
+            else:
+                # Center not in mask, find largest component
+                component_sizes = ndimage.sum(grown_mask > 0, labeled_array, range(1, num_features + 1))
+                largest_label = np.argmax(component_sizes) + 1
+                grown_mask = (labeled_array == largest_label).astype(np.uint8) * 255
+        
+        # Step 7: Optional edge smoothing
+        if smooth_edges:
+            grown_mask = self._smooth_mask_edges(grown_mask > 0).astype(np.uint8) * 255
+        
+        # Convert to boolean mask
+        final_mask = grown_mask > 0
+        mask_area = int(np.sum(final_mask))
+        
+        if mask_area < self.min_mask_region_area:
+            logger.warning(f"Grown mask too small ({mask_area} < {self.min_mask_region_area})")
+            return None
+        
+        # Calculate bounding box
+        y_coords, x_coords = np.where(final_mask)
+        if len(y_coords) == 0:
+            return None
+        
+        bbox = (
+            int(x_coords.min()),
+            int(y_coords.min()),
+            int(x_coords.max() - x_coords.min()),
+            int(y_coords.max() - y_coords.min()),
+        )
+        
+        mask_data = MaskData(
+            id=f"grow_mask_{center_x}_{center_y}",
+            mask=final_mask,
+            area=mask_area,
+            bbox=bbox,
+            predicted_iou=1.0,  # Not from SAM, user-guided
+            stability_score=1.0,
+        )
+        
+        growth_ratio = mask_area / seed_area if seed_area > 0 else 1.0
+        logger.info(f"Generated grown mask: seed={seed_area} -> final={mask_area} ({growth_ratio:.1f}x), "
+                   f"center=({center_x},{center_y})")
         return mask_data
 
     def generate_from_point(

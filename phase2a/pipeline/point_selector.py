@@ -276,6 +276,81 @@ class PointBasedSelector:
         logger.info(f"Generated filled polygon mask {mask_id} with area {mask_data.area}")
         return mask_data
 
+    def grow_from_polygon(
+        self,
+        outline_points: List[tuple],
+        hole: int,
+        feature_type: FeatureType,
+        color_sensitivity: float = 0.6,
+        growth_limit: int = 50,
+    ) -> Optional[MaskData]:
+        """
+        Generate a mask by growing outward from a drawn polygon based on color.
+        
+        The polygon should be drawn INSIDE the feature - the algorithm grows
+        outward until hitting a color boundary or the growth limit.
+        
+        Args:
+            outline_points: List of (x, y) coordinates forming the seed polygon
+            hole: Hole number (1-18)
+            feature_type: Type of feature (green, fairway, bunker, tee)
+            color_sensitivity: 0.0 = strict, 1.0 = loose (default 0.6)
+            growth_limit: Maximum pixels to grow from polygon (default 50)
+            
+        Returns:
+            Generated MaskData or None if generation failed
+        """
+        if len(outline_points) < 3:
+            logger.warning("Need at least 3 points to form a polygon")
+            print(f"[GROW] Need at least 3 points, got {len(outline_points)}")
+            return None
+        
+        # Calculate center for logging
+        xs = [p[0] for p in outline_points]
+        ys = [p[1] for p in outline_points]
+        center_x = int(np.mean(xs))
+        center_y = int(np.mean(ys))
+        
+        print(f"[GROW] Processing polygon with {len(outline_points)} points")
+        print(f"[GROW] Bounds: x=[{min(xs):.0f}, {max(xs):.0f}], y=[{min(ys):.0f}, {max(ys):.0f}]")
+        print(f"[GROW] Settings: sensitivity={color_sensitivity:.2f}, limit={growth_limit}px")
+        
+        logger.info(f"Growing mask from polygon ({len(outline_points)} points) "
+                   f"for hole {hole}, {feature_type.value}")
+        
+        # Generate grown mask
+        mask_data = self.mask_generator.generate_from_polygon_grow(
+            self.image,
+            outline_points=outline_points,
+            color_sensitivity=color_sensitivity,
+            growth_limit=growth_limit,
+            smooth_edges=True,
+        )
+        
+        if mask_data is None:
+            logger.warning("Failed to grow mask from polygon")
+            print("[GROW] Failed to generate mask")
+            return None
+        
+        print(f"[GROW] Generated mask with area {mask_data.area} pixels")
+        
+        # Create unique ID for this mask
+        mask_id = f"{feature_type.value}_{hole}_grow_{len(self.generated_masks):04d}"
+        mask_data.id = mask_id
+        
+        # Store generated mask
+        self.generated_masks[mask_id] = mask_data
+        
+        # Add to selections
+        if hole not in self.selections:
+            self.selections[hole] = HoleSelection(hole=hole)
+        
+        selection = self.selections[hole]
+        self._add_to_selection(selection, feature_type, mask_id)
+        
+        logger.info(f"Generated grown mask {mask_id} with area {mask_data.area}")
+        return mask_data
+
     def fill_and_merge(
         self,
         outline_points: List[tuple],

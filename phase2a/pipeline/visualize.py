@@ -169,11 +169,19 @@ class InteractiveMaskSelector:
         self._fill_mode = False
         self._mode_text = None  # Text artist showing current mode
         
+        # Grow mode: if True, uses region growing from polygon interior
+        self._grow_mode = False
+        
         # Color sensitivity: 0=strictest (tight masks), 1=loosest (wide masks)
         # Default 0.6 = current behavior (slightly right of middle)
         # Maps to color_tolerance: 0->3.0 LAB, 0.5->6.0 LAB, 1.0->15.0 LAB
         self._color_sensitivity = 0.6
         self._sensitivity_slider = None
+        
+        # Growth limit: how far (in pixels) the mask can grow from initial polygon
+        # Default 50 pixels, range 10-200
+        self._growth_limit = 50
+        self._growth_slider = None
         
     def _setup_instructions_panel(self):
         """Setup the left instructions panel with controls and shortcuts."""
@@ -187,13 +195,17 @@ class InteractiveMaskSelector:
         instructions = [
             "",
             "DRAWING:",
-            "  Click+drag to outline",
-            "  a feature area",
+            "  Click+drag to draw",
+            "  inside the feature",
+            "  (polygon grows out)",
             "",
             "KEYBOARD:",
             "  F = Toggle Fill mode",
-            "      SAM: analyzes color",
+            "      SAM: grows by color",
             "      FILL: exact polygon",
+            "",
+            "  G = Toggle Grow mode",
+            "      (region growing)",
             "",
             "  M = Merge masks",
             "",
@@ -204,7 +216,6 @@ class InteractiveMaskSelector:
             "MOUSE:",
             "  Scroll = Zoom in/out",
             "  Drag = Pan (toolbar)",
-            "",
         ]
         
         y_pos = 0.90
@@ -212,14 +223,6 @@ class InteractiveMaskSelector:
             ax.text(0.05, y_pos, line, fontsize=9, fontfamily='monospace',
                     ha='left', va='top', transform=ax.transAxes)
             y_pos -= 0.04
-        
-        # Sensitivity slider section
-        ax.text(0.5, 0.36, "─" * 15, fontsize=9, fontfamily='monospace',
-                ha='center', va='top', transform=ax.transAxes)
-        ax.text(0.5, 0.33, "COLOR SENSITIVITY", fontsize=10, fontweight='bold',
-                ha='center', va='top', transform=ax.transAxes)
-        ax.text(0.5, 0.30, "(how strict color matching is)", fontsize=8,
-                ha='center', va='top', transform=ax.transAxes)
         
         # Mode indicator (will be updated in _update_instructions)
         self._mode_label = ax.text(0.5, 0.17, "Mode: SAM", fontsize=12, fontweight='bold',
@@ -241,9 +244,16 @@ class InteractiveMaskSelector:
         if not hasattr(self, '_mode_label'):
             return
         
-        # Update mode
-        mode_name = "FILL" if self._fill_mode else "SAM"
-        mode_color = 'orange' if self._fill_mode else 'lightblue'
+        # Update mode - show GROW mode if active
+        if hasattr(self, '_grow_mode') and self._grow_mode:
+            mode_name = "GROW"
+            mode_color = '#90EE90'  # Light green
+        elif self._fill_mode:
+            mode_name = "FILL"
+            mode_color = 'orange'
+        else:
+            mode_name = "SAM"
+            mode_color = 'lightblue'
         self._mode_label.set_text(f"Mode: {mode_name}")
         self._mode_label.set_bbox(dict(boxstyle='round', facecolor=mode_color, alpha=0.9))
         
@@ -254,6 +264,85 @@ class InteractiveMaskSelector:
         if hasattr(self, '_current_feature_type') and hasattr(self, '_current_hole'):
             feature_name = self._current_feature_type.value if self._current_feature_type else "feature"
             self._task_label.set_text(f"Draw {feature_name} for hole {self._current_hole}")
+    
+    def _setup_sliders_panel(self):
+        """Setup the right panel with tuning sliders."""
+        ax = self.ax_sliders
+        
+        # Title
+        ax.text(0.5, 0.97, "Tuning", fontsize=14, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Color Sensitivity section
+        ax.text(0.5, 0.90, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.87, "COLOR", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.84, "SENSITIVITY", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.80, "(how much color\nvariation allowed)", fontsize=8,
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Color sensitivity slider - positioned in figure coordinates
+        # [left, bottom, width, height]
+        ax_sens = self.fig.add_axes([0.88, 0.70, 0.10, 0.02])
+        self._sensitivity_slider = Slider(
+            ax_sens, '', 0.0, 1.0, valinit=self._color_sensitivity,
+            valstep=0.05, color='steelblue'
+        )
+        self._sensitivity_slider.on_changed(self._on_sensitivity_changed)
+        ax_sens.text(0.0, -1.5, 'Strict', fontsize=8, ha='center', va='top', transform=ax_sens.transAxes)
+        ax_sens.text(1.0, -1.5, 'Loose', fontsize=8, ha='center', va='top', transform=ax_sens.transAxes)
+        
+        # Current value display for color sensitivity
+        self._sens_value_text = ax.text(0.5, 0.64, f"Value: {self._color_sensitivity:.2f}", fontsize=9,
+                                        ha='center', va='top', transform=ax.transAxes)
+        
+        # Growth Limit section
+        ax.text(0.5, 0.55, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.52, "GROWTH", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.49, "LIMIT", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.45, "(max pixels to grow\nfrom initial polygon)", fontsize=8,
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Growth limit slider
+        ax_growth = self.fig.add_axes([0.88, 0.35, 0.10, 0.02])
+        self._growth_slider = Slider(
+            ax_growth, '', 10, 200, valinit=self._growth_limit,
+            valstep=10, color='forestgreen'
+        )
+        self._growth_slider.on_changed(self._on_growth_changed)
+        ax_growth.text(0.0, -1.5, '10px', fontsize=8, ha='center', va='top', transform=ax_growth.transAxes)
+        ax_growth.text(1.0, -1.5, '200px', fontsize=8, ha='center', va='top', transform=ax_growth.transAxes)
+        
+        # Current value display for growth limit
+        self._growth_value_text = ax.text(0.5, 0.29, f"Value: {self._growth_limit}px", fontsize=9,
+                                          ha='center', va='top', transform=ax.transAxes)
+        
+        # Info section
+        ax.text(0.5, 0.18, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.14, "Draw INSIDE the\nfeature - mask will\ngrow outward based\non color similarity", 
+                fontsize=8, ha='center', va='top', transform=ax.transAxes,
+                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
+    
+    def _on_growth_changed(self, val):
+        """Handle growth limit slider change."""
+        self._growth_limit = int(val)
+        self._update_growth_limit(int(val))
+        # Update the value display
+        if hasattr(self, '_growth_value_text'):
+            self._growth_value_text.set_text(f"Value: {self._growth_limit}px")
+            self.fig.canvas.draw_idle()
+    
+    def _update_growth_limit(self, growth_limit):
+        """Update the mask generator's growth limit."""
+        if hasattr(self.selector, 'mask_generator'):
+            self.selector.mask_generator.growth_limit = growth_limit
+        logger.info(f"Growth limit: {growth_limit}px")
 
     def _is_toolbar_active(self):
         """Check if pan or zoom tool is active in the toolbar."""
@@ -350,7 +439,40 @@ class InteractiveMaskSelector:
         
         # Check if this is a point-based selector with outline support
         if hasattr(self.selector, 'draw_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
-            if self._fill_mode:
+            if self._grow_mode:
+                # Grow mode: region growing from drawn polygon interior
+                print(f"[GROW MODE] Processing {len(self._draw_points)} draw points")
+                if hasattr(self.selector, 'grow_from_polygon'):
+                    mask_data = self.selector.grow_from_polygon(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type,
+                        color_sensitivity=self._color_sensitivity,
+                        growth_limit=self._growth_limit,
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Grew mask from polygon: {mask_data.id}")
+                        print(f"[GROW MODE] Created: {mask_data.id} ({mask_data.area} pixels)")
+                    else:
+                        logger.warning("Failed to grow mask from polygon")
+                        print("[GROW MODE] Failed - try adjusting sliders")
+                else:
+                    logger.warning("Grow mode not supported by this selector")
+                    print("[GROW MODE] Not supported - using SAM instead")
+                    # Fallback to SAM mode
+                    mask_data = self.selector.draw_to_mask(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+            elif self._fill_mode:
                 # Fill mode: generate filled polygon and AUTO-MERGE with last mask
                 print(f"[FILL MODE] Processing {len(self._draw_points)} draw points")
                 if hasattr(self.selector, 'fill_and_merge'):
@@ -498,6 +620,10 @@ class InteractiveMaskSelector:
         """Handle color sensitivity slider change."""
         self._color_sensitivity = val
         self._update_color_tolerance(val)
+        # Update the value display
+        if hasattr(self, '_sens_value_text'):
+            self._sens_value_text.set_text(f"Value: {self._color_sensitivity:.2f}")
+            self.fig.canvas.draw_idle()
     
     def _update_color_tolerance(self, sensitivity):
         """Convert slider value to color tolerance and update mask generator."""
@@ -583,9 +709,17 @@ class InteractiveMaskSelector:
             if self.done_callback:
                 self.done_callback()
         elif event.key == 'f':
-            # F = Toggle fill mode
+            # F = Toggle fill mode (turns off grow mode)
             self._fill_mode = not self._fill_mode
+            self._grow_mode = False  # Fill and grow are mutually exclusive
             mode_name = "FILL (polygon)" if self._fill_mode else "SAM (outline)"
+            logger.info(f"Switched to {mode_name} mode")
+            self._redraw()  # Redraw to update mode indicator
+        elif event.key == 'g':
+            # G = Toggle grow mode (region growing from polygon interior)
+            self._grow_mode = not self._grow_mode
+            self._fill_mode = False  # Fill and grow are mutually exclusive
+            mode_name = "GROW (region growing)" if self._grow_mode else "SAM (outline)"
             logger.info(f"Switched to {mode_name} mode")
             self._redraw()  # Redraw to update mode indicator
         elif event.key == 'm':
@@ -743,18 +877,25 @@ class InteractiveMaskSelector:
             # Original selector
             masks = list(self.selector.masks.values())
         
-        # Create figure with instructions panel on left, image on right
-        self.fig = plt.figure(figsize=(18, 12))
+        # Create figure with instructions panel on left, sliders on right, image in center
+        self.fig = plt.figure(figsize=(20, 12))
         
         # Left panel for instructions (fixed width)
-        self.ax_instructions = self.fig.add_axes([0.01, 0.05, 0.14, 0.90])
+        self.ax_instructions = self.fig.add_axes([0.01, 0.05, 0.12, 0.90])
         self.ax_instructions.set_facecolor('#f0f0f0')
         self.ax_instructions.set_xticks([])
         self.ax_instructions.set_yticks([])
         self._setup_instructions_panel()
         
-        # Main image axes (to the right of instructions)
-        self.ax = self.fig.add_axes([0.16, 0.05, 0.83, 0.93])
+        # Right panel for sliders (fixed width)
+        self.ax_sliders = self.fig.add_axes([0.87, 0.05, 0.12, 0.90])
+        self.ax_sliders.set_facecolor('#f5f5f5')
+        self.ax_sliders.set_xticks([])
+        self.ax_sliders.set_yticks([])
+        self._setup_sliders_panel()
+        
+        # Main image axes (between left and right panels)
+        self.ax = self.fig.add_axes([0.14, 0.05, 0.72, 0.93])
         
         # Enable mouse wheel zoom explicitly
         # Connect scroll event for zoom
@@ -766,27 +907,15 @@ class InteractiveMaskSelector:
         self.ax.set_title(self.title, fontsize=14, pad=20)
         self.ax.axis('off')
         
-        # Add Done button
-        ax_button = self.fig.add_axes([0.85, 0.01, 0.13, 0.03])
+        # Add Done button (centered below image)
+        ax_button = self.fig.add_axes([0.40, 0.01, 0.20, 0.03])
         self.done_button = Button(ax_button, 'Done (Enter/Space)', color='lightgreen', hovercolor='green')
         self.done_button.on_clicked(self._on_done)
         
-        # Add Color Sensitivity slider in the instructions panel area
-        # Position: [left, bottom, width, height] in figure coordinates
-        ax_sens_slider = self.fig.add_axes([0.02, 0.24, 0.11, 0.02])
-        self._sensitivity_slider = Slider(
-            ax_sens_slider, '', 0.0, 1.0, valinit=self._color_sensitivity,
-            valstep=0.05, color='steelblue'
-        )
-        self._sensitivity_slider.on_changed(self._on_sensitivity_changed)
-        
-        # Add labels for slider (Strict = tighter color match, Loose = wider color match)
-        ax_sens_slider.text(-0.05, 0.5, 'Strict', fontsize=8, ha='right', va='center', transform=ax_sens_slider.transAxes)
-        ax_sens_slider.text(1.05, 0.5, 'Loose', fontsize=8, ha='left', va='center', transform=ax_sens_slider.transAxes)
-        
-        # Initialize the mask generator's color tolerance
+        # Initialize the mask generator with current slider values
         if hasattr(self.selector, 'mask_generator'):
             self._update_color_tolerance(self._color_sensitivity)
+            self._update_growth_limit(self._growth_limit)
         
         # Connect event handlers
         # Drawing mode: press to start, motion to draw, release to finish
