@@ -12,7 +12,7 @@ import logging
 try:
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
-    from matplotlib.widgets import Button
+    from matplotlib.widgets import Button, Slider
     from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
@@ -124,6 +124,13 @@ class InteractiveMaskSelector:
     """
     Interactive matplotlib-based mask selector with click-to-select functionality.
     Supports buttons and keyboard shortcuts for smoother workflow.
+    
+    Drawing Modes:
+    - SAM mode (default): Draw outline, SAM generates mask with color refinement
+    - Fill mode ('F' key): Draw polygon that gets completely filled (no SAM processing)
+    
+    Additional Features:
+    - Merge ('M' key): Merge all selected masks into one with smooth edges
     """
     
     def __init__(
@@ -158,6 +165,185 @@ class InteractiveMaskSelector:
         self._draw_points = []  # Points collected during drawing
         self._draw_line = None  # Line artist for drawing visualization
         
+        # Fill mode: if True, draws are filled polygons (no SAM), else SAM outline mode
+        self._fill_mode = False
+        self._mode_text = None  # Text artist showing current mode
+        
+        # Grow mode: if True, uses region growing from polygon interior
+        self._grow_mode = False
+        
+        # Color sensitivity: 0=strictest (tight masks), 1=loosest (wide masks)
+        # Default 0.6 = current behavior (slightly right of middle)
+        # Maps to color_tolerance: 0->3.0 LAB, 0.5->6.0 LAB, 1.0->15.0 LAB
+        self._color_sensitivity = 0.6
+        self._sensitivity_slider = None
+        
+        # Growth limit: how far (in pixels) the mask can grow from initial polygon
+        # Default 50 pixels, range 10-200
+        self._growth_limit = 50
+        self._growth_slider = None
+        
+    def _setup_instructions_panel(self):
+        """Setup the left instructions panel with controls and shortcuts."""
+        ax = self.ax_instructions
+        
+        # Title
+        ax.text(0.5, 0.97, "Controls", fontsize=14, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Instructions text
+        instructions = [
+            "",
+            "DRAWING:",
+            "  Click+drag to draw",
+            "  inside the feature",
+            "  (polygon grows out)",
+            "",
+            "KEYBOARD:",
+            "  F = Toggle Fill mode",
+            "      SAM: grows by color",
+            "      FILL: exact polygon",
+            "",
+            "  G = Toggle Grow mode",
+            "      (region growing)",
+            "",
+            "  M = Merge masks",
+            "",
+            "  Esc = Undo last",
+            "",
+            "  Enter/Space = Done",
+            "",
+            "MOUSE:",
+            "  Scroll = Zoom in/out",
+            "  Drag = Pan (toolbar)",
+        ]
+        
+        y_pos = 0.90
+        for line in instructions:
+            ax.text(0.05, y_pos, line, fontsize=9, fontfamily='monospace',
+                    ha='left', va='top', transform=ax.transAxes)
+            y_pos -= 0.04
+        
+        # Mode indicator (will be updated in _update_instructions)
+        self._mode_label = ax.text(0.5, 0.17, "Mode: SAM", fontsize=12, fontweight='bold',
+                                   ha='center', va='top', transform=ax.transAxes,
+                                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
+        
+        # Selected count
+        self._selected_label = ax.text(0.5, 0.10, "Selected: 0", fontsize=11,
+                                       ha='center', va='top', transform=ax.transAxes,
+                                       bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
+        
+        # Current task hint
+        self._task_label = ax.text(0.5, 0.03, "", fontsize=9, style='italic',
+                                   ha='center', va='top', transform=ax.transAxes,
+                                   wrap=True)
+    
+    def _update_instructions(self):
+        """Update the dynamic parts of the instructions panel."""
+        if not hasattr(self, '_mode_label'):
+            return
+        
+        # Update mode - show GROW mode if active
+        if hasattr(self, '_grow_mode') and self._grow_mode:
+            mode_name = "GROW"
+            mode_color = '#90EE90'  # Light green
+        elif self._fill_mode:
+            mode_name = "FILL"
+            mode_color = 'orange'
+        else:
+            mode_name = "SAM"
+            mode_color = 'lightblue'
+        self._mode_label.set_text(f"Mode: {mode_name}")
+        self._mode_label.set_bbox(dict(boxstyle='round', facecolor=mode_color, alpha=0.9))
+        
+        # Update selected count
+        self._selected_label.set_text(f"Selected: {len(self.selected_mask_ids)}")
+        
+        # Update task hint based on context
+        if hasattr(self, '_current_feature_type') and hasattr(self, '_current_hole'):
+            feature_name = self._current_feature_type.value if self._current_feature_type else "feature"
+            self._task_label.set_text(f"Draw {feature_name} for hole {self._current_hole}")
+    
+    def _setup_sliders_panel(self):
+        """Setup the right panel with tuning sliders."""
+        ax = self.ax_sliders
+        
+        # Title
+        ax.text(0.5, 0.97, "Tuning", fontsize=14, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Color Sensitivity section
+        ax.text(0.5, 0.90, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.87, "COLOR", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.84, "SENSITIVITY", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.80, "(how much color\nvariation allowed)", fontsize=8,
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Color sensitivity slider - positioned in figure coordinates
+        # [left, bottom, width, height]
+        ax_sens = self.fig.add_axes([0.88, 0.70, 0.10, 0.02])
+        self._sensitivity_slider = Slider(
+            ax_sens, '', 0.0, 1.0, valinit=self._color_sensitivity,
+            valstep=0.05, color='steelblue'
+        )
+        self._sensitivity_slider.on_changed(self._on_sensitivity_changed)
+        ax_sens.text(0.0, -1.5, 'Strict', fontsize=8, ha='center', va='top', transform=ax_sens.transAxes)
+        ax_sens.text(1.0, -1.5, 'Loose', fontsize=8, ha='center', va='top', transform=ax_sens.transAxes)
+        
+        # Current value display for color sensitivity
+        self._sens_value_text = ax.text(0.5, 0.64, f"Value: {self._color_sensitivity:.2f}", fontsize=9,
+                                        ha='center', va='top', transform=ax.transAxes)
+        
+        # Growth Limit section
+        ax.text(0.5, 0.55, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.52, "GROWTH", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.49, "LIMIT", fontsize=11, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.45, "(max pixels to grow\nfrom initial polygon)", fontsize=8,
+                ha='center', va='top', transform=ax.transAxes)
+        
+        # Growth limit slider
+        ax_growth = self.fig.add_axes([0.88, 0.35, 0.10, 0.02])
+        self._growth_slider = Slider(
+            ax_growth, '', 10, 200, valinit=self._growth_limit,
+            valstep=10, color='forestgreen'
+        )
+        self._growth_slider.on_changed(self._on_growth_changed)
+        ax_growth.text(0.0, -1.5, '10px', fontsize=8, ha='center', va='top', transform=ax_growth.transAxes)
+        ax_growth.text(1.0, -1.5, '200px', fontsize=8, ha='center', va='top', transform=ax_growth.transAxes)
+        
+        # Current value display for growth limit
+        self._growth_value_text = ax.text(0.5, 0.29, f"Value: {self._growth_limit}px", fontsize=9,
+                                          ha='center', va='top', transform=ax.transAxes)
+        
+        # Info section
+        ax.text(0.5, 0.18, "─" * 12, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.14, "Draw INSIDE the\nfeature - mask will\ngrow outward based\non color similarity", 
+                fontsize=8, ha='center', va='top', transform=ax.transAxes,
+                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
+    
+    def _on_growth_changed(self, val):
+        """Handle growth limit slider change."""
+        self._growth_limit = int(val)
+        self._update_growth_limit(int(val))
+        # Update the value display
+        if hasattr(self, '_growth_value_text'):
+            self._growth_value_text.set_text(f"Value: {self._growth_limit}px")
+            self.fig.canvas.draw_idle()
+    
+    def _update_growth_limit(self, growth_limit):
+        """Update the mask generator's growth limit."""
+        if hasattr(self.selector, 'mask_generator'):
+            self.selector.mask_generator.growth_limit = growth_limit
+        logger.info(f"Growth limit: {growth_limit}px")
+
     def _is_toolbar_active(self):
         """Check if pan or zoom tool is active in the toolbar."""
         try:
@@ -245,23 +431,105 @@ class InteractiveMaskSelector:
             self.fig.canvas.draw_idle()
             return
         
+        # Process events before heavy SAM work to keep GUI responsive
+        try:
+            self.fig.canvas.flush_events()
+        except:
+            pass
+        
         # Check if this is a point-based selector with outline support
         if hasattr(self.selector, 'draw_to_mask') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
-            # Draw-to-mask mode: generate mask from outline
-            mask_data = self.selector.draw_to_mask(
-                self._draw_points,
-                self._current_hole,
-                self._current_feature_type
-            )
-            if mask_data:
-                # Track this as the last generated mask for undo
-                self._last_generated_mask_id = mask_data.id
-                # Add to selected masks
-                if mask_data.id not in self.selected_mask_ids:
-                    self.selected_mask_ids.append(mask_data.id)
-                logger.info(f"Generated mask from outline: {mask_data.id}")
+            if self._grow_mode:
+                # Grow mode: region growing from drawn polygon interior
+                print(f"[GROW MODE] Processing {len(self._draw_points)} draw points")
+                if hasattr(self.selector, 'grow_from_polygon'):
+                    mask_data = self.selector.grow_from_polygon(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type,
+                        color_sensitivity=self._color_sensitivity,
+                        growth_limit=self._growth_limit,
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Grew mask from polygon: {mask_data.id}")
+                        print(f"[GROW MODE] Created: {mask_data.id} ({mask_data.area} pixels)")
+                    else:
+                        logger.warning("Failed to grow mask from polygon")
+                        print("[GROW MODE] Failed - try adjusting sliders")
+                else:
+                    logger.warning("Grow mode not supported by this selector")
+                    print("[GROW MODE] Not supported - using SAM instead")
+                    # Fallback to SAM mode
+                    mask_data = self.selector.draw_to_mask(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+            elif self._fill_mode:
+                # Fill mode: generate filled polygon and AUTO-MERGE with last mask
+                print(f"[FILL MODE] Processing {len(self._draw_points)} draw points")
+                if hasattr(self.selector, 'fill_and_merge'):
+                    # Use auto-merge fill if available
+                    mask_data = self.selector.fill_and_merge(
+                        self._draw_points,
+                        self._last_generated_mask_id,  # Merge with this mask
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        # Remove old mask from selection if it was replaced
+                        if self._last_generated_mask_id and self._last_generated_mask_id in self.selected_mask_ids:
+                            self.selected_mask_ids.remove(self._last_generated_mask_id)
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Fill merged into: {mask_data.id}")
+                        print(f"[FILL MODE] Merged into: {mask_data.id}")
+                    else:
+                        logger.warning("Failed to fill and merge")
+                        print("[FILL MODE] Failed - draw a larger area")
+                elif hasattr(self.selector, 'fill_polygon_to_mask'):
+                    # Fallback to separate fill
+                    mask_data = self.selector.fill_polygon_to_mask(
+                        self._draw_points,
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if mask_data:
+                        self._last_generated_mask_id = mask_data.id
+                        if mask_data.id not in self.selected_mask_ids:
+                            self.selected_mask_ids.append(mask_data.id)
+                        logger.info(f"Generated filled polygon: {mask_data.id}")
+                        print(f"[FILL MODE] Created separate fill: {mask_data.id}")
+                    else:
+                        logger.warning("Failed to generate filled polygon")
+                        print("[FILL MODE] Failed to generate filled polygon")
+                else:
+                    logger.warning("Fill mode not supported by this selector")
+                    print("[FILL MODE] Not supported by this selector")
             else:
-                logger.warning("Failed to generate mask from outline")
+                # SAM mode: generate mask from outline with SAM processing
+                mask_data = self.selector.draw_to_mask(
+                    self._draw_points,
+                    self._current_hole,
+                    self._current_feature_type
+                )
+                if mask_data:
+                    # Track this as the last generated mask for undo
+                    self._last_generated_mask_id = mask_data.id
+                    # Add to selected masks
+                    if mask_data.id not in self.selected_mask_ids:
+                        self.selected_mask_ids.append(mask_data.id)
+                    logger.info(f"Generated mask from outline: {mask_data.id}")
+                else:
+                    logger.warning("Failed to generate mask from outline")
         
         # Clear drawing visualization
         if self._draw_line is not None:
@@ -270,6 +538,12 @@ class InteractiveMaskSelector:
         
         # Clear draw points
         self._draw_points = []
+        
+        # Process events after mask generation to keep GUI responsive
+        try:
+            self.fig.canvas.flush_events()
+        except:
+            pass
         
         # Redraw to show the new mask
         self._redraw()
@@ -342,6 +616,34 @@ class InteractiveMaskSelector:
         if self.done_callback:
             self.done_callback()
     
+    def _on_sensitivity_changed(self, val):
+        """Handle color sensitivity slider change."""
+        self._color_sensitivity = val
+        self._update_color_tolerance(val)
+        # Update the value display
+        if hasattr(self, '_sens_value_text'):
+            self._sens_value_text.set_text(f"Value: {self._color_sensitivity:.2f}")
+            self.fig.canvas.draw_idle()
+    
+    def _update_color_tolerance(self, sensitivity):
+        """Convert slider value to color tolerance and update mask generator."""
+        # Map sensitivity [0, 1] to color_tolerance LAB
+        # Calibrated so 0.6 (default) = 6.0 LAB (original working value)
+        # 0.0 = very strict (2.0 LAB)
+        # 0.6 = default (6.0 LAB) 
+        # 1.0 = loose (15.0 LAB)
+        if sensitivity <= 0.6:
+            # Linear from 2.0 to 6.0 over [0, 0.6]
+            color_tolerance = 2.0 + (sensitivity / 0.6) * 4.0
+        else:
+            # Linear from 6.0 to 15.0 over [0.6, 1.0]
+            color_tolerance = 6.0 + ((sensitivity - 0.6) / 0.4) * 9.0
+        
+        if hasattr(self.selector, 'mask_generator'):
+            self.selector.mask_generator.color_tolerance = color_tolerance
+        
+        logger.info(f"Color sensitivity: {sensitivity:.2f} -> tolerance: {color_tolerance:.1f} LAB")
+    
     def _on_scroll(self, event):
         """Handle mouse wheel scroll for zooming."""
         if event.inaxes != self.ax:
@@ -406,6 +708,42 @@ class InteractiveMaskSelector:
             self._done_pressed = True
             if self.done_callback:
                 self.done_callback()
+        elif event.key == 'f':
+            # F = Toggle fill mode (turns off grow mode)
+            self._fill_mode = not self._fill_mode
+            self._grow_mode = False  # Fill and grow are mutually exclusive
+            mode_name = "FILL (polygon)" if self._fill_mode else "SAM (outline)"
+            logger.info(f"Switched to {mode_name} mode")
+            self._redraw()  # Redraw to update mode indicator
+        elif event.key == 'g':
+            # G = Toggle grow mode (region growing from polygon interior)
+            self._grow_mode = not self._grow_mode
+            self._fill_mode = False  # Fill and grow are mutually exclusive
+            mode_name = "GROW (region growing)" if self._grow_mode else "SAM (outline)"
+            logger.info(f"Switched to {mode_name} mode")
+            self._redraw()  # Redraw to update mode indicator
+        elif event.key == 'm':
+            # M = Merge selected masks
+            if len(self.selected_mask_ids) >= 2:
+                if hasattr(self.selector, 'merge_selected_masks') and hasattr(self, '_current_hole') and hasattr(self, '_current_feature_type'):
+                    merged = self.selector.merge_selected_masks(
+                        self.selected_mask_ids.copy(),
+                        self._current_hole,
+                        self._current_feature_type
+                    )
+                    if merged:
+                        # Clear old selections and select merged mask
+                        self.selected_mask_ids.clear()
+                        self.selected_mask_ids.append(merged.id)
+                        self._last_generated_mask_id = merged.id
+                        logger.info(f"Merged masks into: {merged.id}")
+                        self._redraw()
+                    else:
+                        logger.warning("Failed to merge masks")
+                else:
+                    logger.warning("Merge not supported by this selector")
+            else:
+                logger.info("Select at least 2 masks to merge (press M again after selecting)")
         elif event.key == 'escape':
             # Escape = Undo last generated mask (for point-based) or clear selection
             if hasattr(self.selector, 'click_to_mask') and self._last_generated_mask_id:
@@ -517,25 +855,8 @@ class InteractiveMaskSelector:
                 # We can add them back if needed, but they cause redraw issues
                 pass
         
-        # Add legend and instructions only on first draw
-        if not hasattr(self, '_info_text') or self._info_text is None:
-            info_text = f"Selected: {len(self.selected_mask_ids)}"
-            if self.selected_mask_ids:
-                self._info_text = self.ax.text(0.02, 0.98, info_text,
-                            transform=self.ax.transAxes,
-                            fontsize=12, verticalalignment='top',
-                            bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
-            
-            # Add keyboard shortcuts info
-            shortcuts_text = "Draw outline to mark | Scroll: Zoom | Enter/Space: Done | Esc: Undo last"
-            self._shortcuts_text = self.ax.text(0.5, 0.02, shortcuts_text,
-                        transform=self.ax.transAxes,
-                        fontsize=10, horizontalalignment='center',
-                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        else:
-            # Update info text if it exists
-            if hasattr(self, '_info_text') and self._info_text is not None:
-                self._info_text.set_text(f"Selected: {len(self.selected_mask_ids)}")
+        # Update the instructions panel on the left
+        self._update_instructions()
         
         # Use draw_idle for smoother updates (non-blocking)
         self.fig.canvas.draw_idle()
@@ -556,16 +877,25 @@ class InteractiveMaskSelector:
             # Original selector
             masks = list(self.selector.masks.values())
         
-        # Create figure with space for button and toolbar
-        self.fig = plt.figure(figsize=(16, 13))
+        # Create figure with instructions panel on left, sliders on right, image in center
+        self.fig = plt.figure(figsize=(20, 12))
         
-        # Enable navigation toolbar (zoom/pan) - this is enabled by default in matplotlib
-        # The toolbar allows zooming with mouse wheel and panning by dragging
-        # Click coordinates (event.xdata, event.ydata) are automatically in data coordinates
-        # so they remain accurate even when zoomed/panned
+        # Left panel for instructions (fixed width)
+        self.ax_instructions = self.fig.add_axes([0.01, 0.05, 0.12, 0.90])
+        self.ax_instructions.set_facecolor('#f0f0f0')
+        self.ax_instructions.set_xticks([])
+        self.ax_instructions.set_yticks([])
+        self._setup_instructions_panel()
         
-        # Main image axes
-        self.ax = self.fig.add_axes([0, 0.05, 1, 0.93])  # Leave space at bottom for button
+        # Right panel for sliders (fixed width)
+        self.ax_sliders = self.fig.add_axes([0.87, 0.05, 0.12, 0.90])
+        self.ax_sliders.set_facecolor('#f5f5f5')
+        self.ax_sliders.set_xticks([])
+        self.ax_sliders.set_yticks([])
+        self._setup_sliders_panel()
+        
+        # Main image axes (between left and right panels)
+        self.ax = self.fig.add_axes([0.14, 0.05, 0.72, 0.93])
         
         # Enable mouse wheel zoom explicitly
         # Connect scroll event for zoom
@@ -577,10 +907,15 @@ class InteractiveMaskSelector:
         self.ax.set_title(self.title, fontsize=14, pad=20)
         self.ax.axis('off')
         
-        # Add Done button
-        ax_button = self.fig.add_axes([0.85, 0.01, 0.13, 0.03])
+        # Add Done button (centered below image)
+        ax_button = self.fig.add_axes([0.40, 0.01, 0.20, 0.03])
         self.done_button = Button(ax_button, 'Done (Enter/Space)', color='lightgreen', hovercolor='green')
         self.done_button.on_clicked(self._on_done)
+        
+        # Initialize the mask generator with current slider values
+        if hasattr(self.selector, 'mask_generator'):
+            self._update_color_tolerance(self._color_sensitivity)
+            self._update_growth_limit(self._growth_limit)
         
         # Connect event handlers
         # Drawing mode: press to start, motion to draw, release to finish
@@ -624,9 +959,13 @@ class InteractiveMaskSelector:
         # Show and wait for done if blocking
         if block:
             
-            # Wait for done signal
+            # Wait for done signal with frequent event processing
             while not self._done_pressed:
-                plt.pause(0.1)  # Small pause to allow event processing
+                try:
+                    self.fig.canvas.flush_events()
+                except:
+                    pass
+                plt.pause(0.2)  # Longer pause to reduce CPU and prevent "not responding"
             
             # Don't close the figure - just reset the done flag
             # This allows the same window to be reused for the next feature

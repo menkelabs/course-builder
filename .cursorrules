@@ -1,0 +1,23 @@
+# Course Builder Project Rules
+
+## Python Environment
+- The Python virtual environment is at the PROJECT ROOT: `/home/ubuntu/github/jmjava/course-builder/.venv`
+- Always use `.venv/bin/python` and `.venv/bin/pip` from the project root
+- To run tests: `cd /home/ubuntu/github/jmjava/course-builder && .venv/bin/pytest`
+- To install packages: `.venv/bin/pip install <package>`
+
+## Project Structure
+- `phase1/` - QGIS-based satellite imagery acquisition and boundary extraction
+- `phase2a/` - SAM-based mask generation and interactive feature selection
+- `course-builder/` - Java Spring Boot backend with React frontend
+
+## Testing Commands
+- Run phase2a tests: `.venv/bin/pytest phase2a/tests/ -v`
+- Run specific test file: `.venv/bin/pytest phase2a/tests/test_svg.py -v`
+- Skip GUI tests: `.venv/bin/pytest phase2a/tests/ -v --ignore=phase2a/tests/test_gui_integration.py`
+
+## SVG Output Format
+- Generated SVGs should match the Inkscape-compatible format in `phase2a/resources/RockRidge_No_Overlay.svg`
+- Use inline styles with `opacity:0.5;fill:#XXXXXX` instead of CSS classes
+- Use `inkscape:label` on paths for feature type identification
+- Layer groups use `inkscape:groupmode="layer"` and `inkscape:label="HoleN"`

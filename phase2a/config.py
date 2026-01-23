@@ -38,19 +38,22 @@ class PolygonConfig:
 
 @dataclass
 class SVGConfig:
-    """Configuration for SVG generation."""
+    """Configuration for SVG generation (Inkscape-compatible format)."""
     width: int = 4096
     height: int = 4096
-    stroke_width: float = 1.0
+    opacity: float = 0.5  # Fill opacity for paths (matching RockRidge reference)
     
-    # OPCD color palette
+    # OPCD color palette (lowercase hex, matching reference SVG)
     colors: dict = field(default_factory=lambda: {
-        "water": "#0066cc",
-        "bunker": "#f5deb3",
-        "green": "#228b22",
-        "fairway": "#90ee90",
-        "rough": "#556b2f",
-        "cart_path": "#808080",
+        "water": "#0000c0",
+        "bunker": "#e5e5aa",
+        "green": "#bce5a4",
+        "fairway": "#43e561",
+        "semi": "#36b74d",
+        "rough": "#278438",
+        "tee": "#a0e5b8",
+        "cart_path": "#bebebb",
+        "hole99": "#ff00cb",
     })
 
 
@@ -141,7 +144,7 @@ class Phase2AConfig:
             "svg": {
                 "width": self.svg.width,
                 "height": self.svg.height,
-                "stroke_width": self.svg.stroke_width,
+                "opacity": self.svg.opacity,
                 "colors": self.svg.colors,
             },
             "skip_review": self.skip_review,

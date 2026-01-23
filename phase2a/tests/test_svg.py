@@ -1,5 +1,10 @@
 """
 Tests for SVG generation module.
+
+Tests verify the Inkscape-compatible SVG format matching RockRidge_No_Overlay.svg reference:
+- Inline styles with opacity and fill
+- inkscape:label on paths for feature identification
+- Layer groups with inkscape:groupmode="layer"
 """
 
 import re
@@ -73,7 +78,7 @@ class TestSVGGenerator:
         generator = SVGGenerator()
         assert generator.width == 4096
         assert generator.height == 4096
-        assert generator.stroke_width == 1.0
+        assert generator.opacity == 0.5
         assert "water" in generator.colors
     
     def test_init_custom(self):
@@ -81,21 +86,22 @@ class TestSVGGenerator:
             width=1024,
             height=768,
             colors={"water": "#0000ff"},
-            stroke_width=2.0,
+            opacity=0.7,
         )
         assert generator.width == 1024
         assert generator.height == 768
         assert generator.colors["water"] == "#0000ff"
-        assert generator.stroke_width == 2.0
+        assert generator.opacity == 0.7
     
-    def test_format_hole_id(self):
+    def test_format_hole_label(self):
         generator = SVGGenerator()
         
-        assert generator._format_hole_id(1) == "Hole01"
-        assert generator._format_hole_id(9) == "Hole09"
-        assert generator._format_hole_id(18) == "Hole18"
-        assert generator._format_hole_id(98) == "Hole98_CartPaths"
-        assert generator._format_hole_id(99) == "Hole99_OuterMesh"
+        # New format: Hole1, Hole9, Hole18 (no zero padding)
+        assert generator._format_hole_label(1) == "Hole1"
+        assert generator._format_hole_label(9) == "Hole9"
+        assert generator._format_hole_label(18) == "Hole18"
+        assert generator._format_hole_label(98) == "Hole98"
+        assert generator._format_hole_label(99) == "Hole99"
     
     def test_polygon_to_path_simple(self):
         generator = SVGGenerator()
@@ -103,11 +109,11 @@ class TestSVGGenerator:
         
         path = generator._polygon_to_path(polygon)
         
-        # Should start with M (moveto) and end with Z (close)
-        assert path.startswith("M")
-        assert path.endswith("Z")
-        # Should have L commands
-        assert "L" in path
+        # Should start with m (relative moveto) and end with z (close)
+        assert path.startswith("m")
+        assert path.endswith("z")
+        # Should have relative coordinates (commas separate x,y)
+        assert "," in path
     
     def test_generate_basic(self, sample_assignments):
         generator = SVGGenerator(width=512, height=512)
@@ -118,20 +124,21 @@ class TestSVGGenerator:
         assert svg.startswith("<?xml")
         assert "</svg>" in svg
         
-        # Should have layers
-        assert "Hole01" in svg
-        assert "Hole02" in svg
-        assert "Hole98_CartPaths" in svg
+        # Should have layers with Inkscape format (no zero padding)
+        assert 'inkscape:label="Hole1"' in svg
+        assert 'inkscape:label="Hole2"' in svg
+        assert 'inkscape:label="Hole98"' in svg
     
-    def test_generate_has_styles(self, sample_assignments):
+    def test_generate_has_inline_styles(self, sample_assignments):
         generator = SVGGenerator()
         
         svg = generator.generate(sample_assignments)
         
-        # Should have CSS classes
-        assert ".green" in svg
-        assert ".bunker" in svg
-        assert ".fairway" in svg
+        # Should have inline styles with opacity and fill (not CSS classes)
+        assert 'style="opacity:0.5;fill:#' in svg
+        # Should NOT have CSS style block
+        assert ".green {" not in svg
+        assert ".bunker {" not in svg
     
     def test_generate_has_viewbox(self, sample_assignments):
         generator = SVGGenerator(width=1024, height=768)
@@ -140,23 +147,24 @@ class TestSVGGenerator:
         
         assert 'viewBox="0 0 1024 768"' in svg
     
-    def test_generate_paths_have_class(self, sample_assignments):
+    def test_generate_paths_have_inkscape_label(self, sample_assignments):
         generator = SVGGenerator()
         
         svg = generator.generate(sample_assignments)
         
-        # Paths should have class attribute
-        assert 'class="green"' in svg
-        assert 'class="bunker"' in svg
+        # Paths should have inkscape:label attribute for feature identification
+        assert 'inkscape:label="green1"' in svg
+        assert 'inkscape:label="bunker"' in svg
+        assert 'inkscape:label="fairway2"' in svg
     
-    def test_generate_paths_have_data_attributes(self, sample_assignments):
+    def test_generate_paths_have_id(self, sample_assignments):
         generator = SVGGenerator()
         
         svg = generator.generate(sample_assignments)
         
-        # Should have data attributes for identification
-        assert 'data-id=' in svg
-        assert 'data-confidence=' in svg
+        # Should have path IDs
+        assert 'id="path1"' in svg
+        assert 'id="path2"' in svg
     
     def test_save(self, sample_assignments, temp_dir):
         generator = SVGGenerator()
@@ -170,6 +178,8 @@ class TestSVGGenerator:
             content = f.read()
         
         assert content.startswith("<?xml")
+        # Document name should match filename
+        assert 'sodipodi:docname="course.svg"' in content
     
     def test_load(self, sample_assignments, temp_dir):
         generator = SVGGenerator()
@@ -178,7 +188,7 @@ class TestSVGGenerator:
         generator.save(sample_assignments, output_path)
         content = SVGGenerator.load(output_path)
         
-        assert "Hole01" in content
+        assert 'inkscape:label="Hole1"' in content
 
 
 class TestSVGGeneratorColors:
@@ -187,11 +197,11 @@ class TestSVGGeneratorColors:
     def test_default_colors(self):
         generator = SVGGenerator()
         
-        # Colors should be from OPCD v4 palette (loaded from GPL file)
-        assert generator.colors["water"] == "#0000C0"  # Lake from OPCD
-        assert generator.colors["bunker"] == "#E5E5AA"  # Bunker from OPCD
-        assert generator.colors["green"] == "#BCE5A4"  # Green from OPCD
-        assert generator.colors["fairway"] == "#43E561"  # Fairway from OPCD
+        # Colors should be from OPCD v4 palette (lowercase hex)
+        assert generator.colors["water"] == "#0000c0"  # Lake from OPCD
+        assert generator.colors["bunker"] == "#e5e5aa"  # Bunker from OPCD
+        assert generator.colors["green"] == "#bce5a4"  # Green from OPCD
+        assert generator.colors["fairway"] == "#43e561"  # Fairway from OPCD
         assert generator.colors["rough"] == "#278438"  # Rough from OPCD
     
     def test_custom_colors_override(self):
@@ -199,16 +209,16 @@ class TestSVGGeneratorColors:
         
         # Custom color should override OPCD palette
         assert generator.colors["water"] == "#0000ff"
-        # Others should remain OPCD defaults
-        assert generator.colors["green"] == "#BCE5A4"  # OPCD Green
+        # Others should remain OPCD defaults (lowercase)
+        assert generator.colors["green"] == "#bce5a4"  # OPCD Green
     
     def test_colors_in_generated_svg(self, sample_assignments):
         generator = SVGGenerator(colors={"green": "#00ff00"})
         
         svg = generator.generate(sample_assignments)
         
-        # Custom color should appear in styles
-        assert "#00ff00" in svg
+        # Custom color should appear in inline styles
+        assert "fill:#00ff00" in svg
 
 
 class TestSVGCleaner:
@@ -345,9 +355,10 @@ class TestSVGGeneratorEdgeCases:
         
         svg = generator.generate(assignments)
         
-        # Should have hole 5 but not holes 1-4
-        assert "Hole05" in svg
-        assert "Hole01" not in svg
+        # Should have hole 5 (new format, no zero padding)
+        assert 'inkscape:label="Hole5"' in svg
+        # Should NOT have holes 1-4
+        assert 'inkscape:label="Hole1"' not in svg
     
     def test_multipolygon_feature(self):
         """Test feature with MultiPolygon geometry."""
@@ -376,3 +387,43 @@ class TestSVGGeneratorEdgeCases:
         
         # Should handle multipolygon
         assert "<path" in svg
+
+
+class TestSVGGeneratorInkscapeCompatibility:
+    """Tests for Inkscape-specific format compatibility."""
+    
+    def test_has_inkscape_namespaces(self, sample_assignments):
+        generator = SVGGenerator()
+        svg = generator.generate(sample_assignments)
+        
+        # Should have Inkscape and Sodipodi namespaces
+        assert 'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"' in svg
+        assert 'xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"' in svg
+    
+    def test_layers_have_groupmode(self, sample_assignments):
+        generator = SVGGenerator()
+        svg = generator.generate(sample_assignments)
+        
+        # Layers should have inkscape:groupmode="layer"
+        assert 'inkscape:groupmode="layer"' in svg
+    
+    def test_has_sodipodi_namedview(self, sample_assignments):
+        generator = SVGGenerator()
+        svg = generator.generate(sample_assignments)
+        
+        # Should have sodipodi:namedview for Inkscape settings
+        assert '<sodipodi:namedview' in svg
+    
+    def test_has_defs_element(self, sample_assignments):
+        generator = SVGGenerator()
+        svg = generator.generate(sample_assignments)
+        
+        # Should have defs element (even if empty)
+        assert '<defs' in svg
+    
+    def test_svg_version(self, sample_assignments):
+        generator = SVGGenerator()
+        svg = generator.generate(sample_assignments)
+        
+        # Should have version 1.1
+        assert 'version="1.1"' in svg

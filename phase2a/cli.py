@@ -682,9 +682,14 @@ def _interactive_point_mode(console, selector, image_array):
             interactive._done_pressed = False
             interactive._redraw()
             
-            # Wait for done signal
+            # Wait for done signal with frequent event processing
             while not interactive._done_pressed:
-                plt.pause(0.1)  # Small pause to allow event processing
+                try:
+                    if interactive.fig is not None:
+                        interactive.fig.canvas.flush_events()
+                except:
+                    pass
+                plt.pause(0.2)  # Longer pause to reduce CPU and prevent "not responding"
             
             # Get selected masks (already assigned via click_to_mask)
             selected_ids = interactive.get_selected_mask_ids()
