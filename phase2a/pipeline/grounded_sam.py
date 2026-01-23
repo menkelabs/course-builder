@@ -71,6 +71,8 @@ class GroundedSAM:
             sam_checkpoint="sam_vit_h_4b8939.pth",
         )
         masks = gsam.detect_and_segment(image, features=["green", "bunker"])
+    
+    Note: For GPUs with 12GB or less VRAM, use model_type="vit_b" to avoid OOM errors.
     """
     
     def __init__(
@@ -78,20 +80,51 @@ class GroundedSAM:
         dino_checkpoint: str,
         sam_checkpoint: str,
         device: str = "cuda",
+        model_type: str = "vit_b",  # Default to vit_b for memory efficiency with DINO
     ):
-        self.detector = GroundingDinoDetector(
-            checkpoint_path=dino_checkpoint,
-            device=device,
-        )
-        self.sam = MaskGenerator(
-            checkpoint_path=sam_checkpoint,
-            device=device,
-        )
+        self.dino_checkpoint = dino_checkpoint
+        self.sam_checkpoint = sam_checkpoint
+        self.device = device
+        self.model_type = model_type
+        
+        # Lazy loading - don't load models until needed
+        self._detector = None
+        self._sam = None
+    
+    @property
+    def detector(self) -> GroundingDinoDetector:
+        if self._detector is None:
+            self._detector = GroundingDinoDetector(
+                checkpoint_path=self.dino_checkpoint,
+                device=self.device,
+            )
+        return self._detector
+    
+    @property
+    def sam(self) -> MaskGenerator:
+        if self._sam is None:
+            self._sam = MaskGenerator(
+                checkpoint_path=self.sam_checkpoint,
+                device=self.device,
+                model_type=self.model_type,
+            )
+        return self._sam
+    
+    def _clear_dino_memory(self):
+        """Clear DINO model from GPU memory to make room for SAM."""
+        if self._detector is not None and self._detector._model is not None:
+            import torch
+            del self._detector._model
+            self._detector._model = None
+            self._detector = None
+            torch.cuda.empty_cache()
+            logger.info("Cleared DINO from GPU memory")
     
     def detect_and_segment(
         self,
         image: np.ndarray,
         features: Optional[List[str]] = None,
+        clear_between: bool = True,
     ) -> Dict[str, List[MaskData]]:
         """
         Detect golf features and create precise masks.
@@ -99,14 +132,24 @@ class GroundedSAM:
         Args:
             image: RGB image
             features: Feature types to detect (default: all golf features)
+            clear_between: Clear DINO from GPU before loading SAM (saves ~4GB VRAM)
             
         Returns:
             Dict mapping feature type to list of MaskData
         """
         # Step 1: Detect with Grounding DINO
+        logger.info("Running Grounding DINO detection...")
         detections = self.detector.detect_golf_features(image, features)
         
+        total_boxes = sum(len(boxes) for boxes in detections.values())
+        logger.info(f"DINO detected {total_boxes} boxes across {len(detections)} feature types")
+        
+        # Clear DINO from memory before loading SAM
+        if clear_between:
+            self._clear_dino_memory()
+        
         # Step 2: Segment each detection with SAM
+        logger.info(f"Running SAM segmentation (model_type={self.model_type})...")
         results = {}
         
         for feature_type, boxes in detections.items():
@@ -124,6 +167,7 @@ class GroundedSAM:
                     masks.append(mask_data)
             
             results[feature_type] = masks
+            logger.info(f"  {feature_type}: {len(masks)} masks from {len(boxes)} detections")
         
         return results
 

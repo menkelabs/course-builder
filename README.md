@@ -113,7 +113,7 @@ phase1 run --course-name MyCourse -o workspace/
 ```bash
 cd phase2a
 pip install -e .
-phase2a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
+phase2a run satellite.png --checkpoint models/sam_vit_h_4b8939.pth -o output/
 ```
 
 ### Course Builder Agent

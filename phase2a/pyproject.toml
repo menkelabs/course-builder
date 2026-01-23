@@ -41,6 +41,17 @@ sam = [
     "torchvision>=0.15.0",
     "segment-anything @ git+https://github.com/facebookresearch/segment-anything.git",
 ]
+dino = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "groundingdino-py>=0.4.0",
+]
+grounded-sam = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "segment-anything @ git+https://github.com/facebookresearch/segment-anything.git",
+    "groundingdino-py>=0.4.0",
+]
 gui = [
     "matplotlib>=3.7.0",
     "PyQt5>=5.15.0",
@@ -52,7 +63,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
-all = ["phase2a[sam,dev,gui]"]
+all = ["phase2a[grounded-sam,dev,gui]"]
 
 [project.scripts]
 phase2a = "phase2a.cli:main"

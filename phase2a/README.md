@@ -32,16 +32,110 @@ pip install -e .
 pip install -e ".[gui]"
 ```
 
-4. Download SAM checkpoint (e.g., `sam_vit_h_4b8939.pth`) to `checkpoints/` directory.
+4. Download model checkpoints (see [Model Downloads](#model-downloads) section below).
+
+## Model Downloads
+
+Model files are large and not included in the repository. Download them to the `models/` directory at the project root.
+
+### Create Models Directory
+
+```bash
+# From project root
+mkdir -p models
+cd models
+```
+
+### SAM (Segment Anything Model)
+
+Choose ONE based on your GPU VRAM:
+
+| Model | Size | VRAM Required | Quality |
+|-------|------|---------------|---------|
+| vit_h | 2.4 GB | 12+ GB | Best |
+| vit_l | 1.2 GB | 8+ GB | Good |
+| vit_b | 375 MB | 4+ GB | Faster |
+
+```bash
+# Option A: vit_h (recommended if you have 12GB+ VRAM)
+wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+
+# Option B: vit_l (good balance)
+wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
+
+# Option C: vit_b (fastest, lower quality)
+wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth
+```
+
+### Grounding DINO (for auto-detect feature)
+
+```bash
+# Download Grounding DINO weights (~1.5 GB)
+wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth
+
+# Also install the Python package
+pip install groundingdino-py
+```
+
+### Verify Downloads
+
+```bash
+# Your models directory should look like:
+ls -la models/
+# sam_vit_h_4b8939.pth      (2.4 GB)
+# groundingdino_swint_ogc.pth (1.5 GB)
+```
+
+### Expected Directory Structure
+
+```
+course-builder/
+├── models/                              # Model checkpoints (git-ignored)
+│   ├── sam_vit_h_4b8939.pth            # SAM weights
+│   └── groundingdino_swint_ogc.pth     # Grounding DINO weights
+├── phase2a/
+│   └── ...
+└── ...
+```
 
 ## Usage
+
+### Auto-Detect with Grounding DINO (Recommended)
+
+Automatically detect and segment golf course features using Grounding DINO + SAM:
+
+```bash
+phase2a auto-detect satellite.png \
+    --dino-checkpoint models/groundingdino_swint_ogc.pth \
+    --sam-checkpoint models/sam_vit_h_4b8939.pth \
+    -o output/
+```
+
+**Options:**
+- `--dino-checkpoint`: Grounding DINO model checkpoint (required)
+- `--sam-checkpoint`: SAM model checkpoint (required)
+- `--features`: Feature types to detect (default: green, fairway, bunker, tee)
+- `--device`: Device to run on: `cuda` or `cpu` (default: `cuda`)
+- `-o, --output`: Output directory (default: `phase2a_output`)
+
+**Example with specific features:**
+```bash
+phase2a auto-detect satellite.png \
+    --dino-checkpoint models/groundingdino_swint_ogc.pth \
+    --sam-checkpoint models/sam_vit_h_4b8939.pth \
+    --features green fairway bunker tee water \
+    --device cuda \
+    -o output/
+```
+
+This uses text prompts like "golf green", "sand bunker", etc. to automatically find features without manual clicking.
 
 ### Run Complete Pipeline
 
 Run the full Phase 2A pipeline from satellite image to SVG:
 
 ```bash
-phase2a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
+phase2a run satellite.png --checkpoint models/sam_vit_h_4b8939.pth -o output/
 ```
 
 **Options:**
@@ -58,7 +152,7 @@ phase2a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o outpu
 **Example with options:**
 ```bash
 phase2a run satellite.png \
-  --checkpoint checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint models/sam_vit_h_4b8939.pth \
   -o output/ \
   --device cuda \
   --high-threshold 0.9 \
@@ -71,7 +165,7 @@ phase2a run satellite.png \
 Interactive hole-by-hole feature assignment with GUI (point-based selection):
 
 ```bash
-phase2a select satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
+phase2a select satellite.png --checkpoint models/sam_vit_h_4b8939.pth -o output/
 ```
 
 **Options:**
@@ -132,7 +226,7 @@ The interactive selection workflow guides you through assigning features to each
 Generate SAM masks from an image without running the full pipeline:
 
 ```bash
-phase2a generate-masks image.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o masks/
+phase2a generate-masks image.png --checkpoint models/sam_vit_h_4b8939.pth -o masks/
 ```
 
 **Options:**

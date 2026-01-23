@@ -57,6 +57,7 @@ dmypy.json
 
 # Project-specific
 checkpoints/
+models/
 *.pth
 *.ckpt
 WIP/

@@ -227,7 +227,7 @@ Checkpoints that must be completed before proceeding:
 This project integrates with the existing Phase2a Python pipeline for SAM-based course tracing. The `Phase2aMcpTool` wraps the Python CLI:
 
 ```bash
-phase2a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
+phase2a run satellite.png --checkpoint models/sam_vit_h_4b8939.pth -o output/
 phase2a select satellite.png --checkpoint ... -o output/  # Interactive mode
 ```
 

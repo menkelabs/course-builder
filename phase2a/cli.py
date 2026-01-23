@@ -54,31 +54,134 @@ def cli():
 @click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("phase2a_output"))
 @click.option("--features", multiple=True, default=["green", "fairway", "bunker", "tee"])
 @click.option("--device", default="cuda")
-def auto_detect(image, dino_checkpoint, sam_checkpoint, output, features, device):
+@click.option(
+    "--model-type",
+    type=click.Choice(["vit_h", "vit_l", "vit_b"]),
+    default="vit_b",
+    help="SAM model variant (vit_b recommended for 12GB GPU when used with DINO)",
+)
+def auto_detect(image, dino_checkpoint, sam_checkpoint, output, features, device, model_type):
     """
     Automatically detect and segment golf course features.
     
     Uses Grounding DINO for detection + SAM for segmentation.
     No API costs - runs 100% locally.
+    
+    Note: For GPUs with <=12GB VRAM, use --model-type vit_b (default).
+    DINO uses ~4-6GB, so SAM vit_h won't fit alongside it.
     """
     from .pipeline.grounded_sam import GroundedSAM
+    
+    console.print(f"[cyan]Loading Grounded SAM (SAM model: {model_type})...[/cyan]")
     
     gsam = GroundedSAM(
         dino_checkpoint=dino_checkpoint,
         sam_checkpoint=sam_checkpoint,
         device=device,
+        model_type=model_type,
     )
     
     # Load image
     from PIL import Image
     img = np.array(Image.open(image).convert("RGB"))
+    console.print(f"[cyan]Image loaded: {img.shape[1]}x{img.shape[0]}[/cyan]")
     
     # Detect and segment
+    console.print("[cyan]Running detection and segmentation...[/cyan]")
     results = gsam.detect_and_segment(img, features=list(features))
     
     # Output results
+    console.print("\n[bold]Results:[/bold]")
     for feature, masks in results.items():
-        console.print(f"[green]{feature}:[/green] {len(masks)} detected")
+        console.print(f"  [green]{feature}:[/green] {len(masks)} detected")
+
+
+@cli.command()
+@click.argument("image", type=click.Path(exists=True, path_type=Path))
+@click.option("--dino-checkpoint", required=True, help="Grounding DINO checkpoint")
+@click.option("--sam-checkpoint", required=True, help="SAM checkpoint")
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("phase2a_output"))
+@click.option("--device", default="cuda")
+@click.option(
+    "--model-type",
+    type=click.Choice(["vit_h", "vit_l", "vit_b"]),
+    default="vit_b",
+    help="SAM model variant",
+)
+@click.option(
+    "--box-threshold",
+    type=float,
+    default=0.25,
+    help="DINO box detection confidence threshold (lower = more detections)",
+)
+@click.option(
+    "--text-threshold",
+    type=float,
+    default=0.20,
+    help="DINO text matching threshold (lower = looser matching)",
+)
+def detect_interactive(image, dino_checkpoint, sam_checkpoint, output, device, model_type, box_threshold, text_threshold):
+    """
+    Interactive polygon-based detection with Grounding DINO + SAM.
+    
+    Workflow:
+    1. View the full satellite image
+    2. Draw a polygon around a hole (click points, right-click to close)
+    3. Check which features to detect (green, bunker, fairway, tee, etc.)
+    4. Click 'Detect' - DINO finds features, SAM segments them
+    5. See results overlaid on the image
+    6. Click 'Next Hole' to move to the next hole, or 'Done' when finished
+    
+    Controls:
+    - Left-click: Add polygon point
+    - Right-click or Enter: Close polygon
+    - Esc: Clear current polygon
+    - Checkboxes: Select which features to detect
+    - 'Detect' button: Run DINO+SAM on the polygon region
+    - 'Clear' button: Reset current polygon
+    - 'Next Hole' button: Move to next hole
+    - 'Done' button: Finish and save results
+    """
+    from .pipeline.roi_detector import InteractiveROIDetector
+    from PIL import Image
+    
+    console.print("\n[bold blue]Interactive ROI Detection[/bold blue]")
+    console.print(f"Image: {image}")
+    console.print(f"SAM model: {model_type}\n")
+    
+    # Load image
+    img = np.array(Image.open(image).convert("RGB"))
+    console.print(f"[cyan]Image loaded: {img.shape[1]}x{img.shape[0]}[/cyan]")
+    
+    # Create output directory
+    output.mkdir(parents=True, exist_ok=True)
+    
+    # Launch interactive detector
+    console.print("\n[yellow]Opening interactive window...[/yellow]")
+    console.print(f"[dim]DINO thresholds: box={box_threshold}, text={text_threshold}[/dim]")
+    console.print("[dim]Draw a polygon, select feature type, then click Detect[/dim]\n")
+    
+    detector = InteractiveROIDetector(
+        image=img,
+        dino_checkpoint=dino_checkpoint,
+        sam_checkpoint=sam_checkpoint,
+        device=device,
+        model_type=model_type,
+        output_dir=output,
+        box_threshold=box_threshold,
+        text_threshold=text_threshold,
+    )
+    
+    results = detector.run()
+    
+    # Summary
+    console.print("\n[bold]Detection Summary:[/bold]")
+    for feature_type, masks in results.items():
+        console.print(f"  [green]{feature_type}:[/green] {len(masks)} masks")
+    
+    total_masks = sum(len(m) for m in results.values())
+    console.print(f"\n[bold]Total: {total_masks} masks detected[/bold]")
+    console.print(f"[dim]Results saved to: {output}[/dim]")
 
 
 @cli.command()

@@ -5,7 +5,7 @@ This document provides a step-by-step walkthrough for processing a complete golf
 ## Prerequisites
 
 - Python 3.10+ with virtual environment activated
-- SAM checkpoint file (`sam_vit_h_4b8939.pth`) in `checkpoints/` directory
+- SAM checkpoint file (`sam_vit_h_4b8939.pth`) in `models/` directory (see [phase2a README](../phase2a/README.md#model-downloads))
 - Satellite image of golf course (e.g., `phase2a/resources/Pictatinny_B.jpg`)
 - Optional: Green centers JSON file for hole assignment
 
@@ -32,7 +32,7 @@ For best results, use the interactive selection workflow which will automaticall
 ```bash
 cd phase2a
 phase2a select ../phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint ../models/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_interactive
 ```
@@ -60,7 +60,7 @@ phase2a select ../phase2a/resources/Pictatinny_B.jpg \
 
 ```bash
 phase2a run ../phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint ../models/sam_vit_h_4b8939.pth \
   --green-centers test_interactive/metadata/green_centers.json \
   --device cuda \
   --high-threshold 0.85 \
@@ -84,7 +84,7 @@ cat > green_centers.json << EOF
 EOF
 
 phase2a run ../phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint ../models/sam_vit_h_4b8939.pth \
   --green-centers green_centers.json \
   --device cuda \
   -o test_output \
@@ -96,7 +96,7 @@ Run the full automated pipeline:
 ```bash
 cd phase2a
 phase2a run ../phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint ../models/sam_vit_h_4b8939.pth \
   --green-centers green_centers.json \
   --device cuda \
   --high-threshold 0.85 \
@@ -284,7 +284,7 @@ For manual hole-by-hole selection:
 
 ```bash
 phase2a generate-masks phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint models/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_masks
 ```
@@ -293,7 +293,7 @@ phase2a generate-masks phase2a/resources/Pictatinny_B.jpg \
 
 ```bash
 phase2a select phase2a/resources/Pictatinny_B.jpg \
-  --checkpoint checkpoints/sam_vit_h_4b8939.pth \
+  --checkpoint models/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_interactive
 ```

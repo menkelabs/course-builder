@@ -28,14 +28,34 @@ class GroundingDinoDetector:
         boxes = detector.detect(image, prompts=["golf green", "sand bunker"])
     """
     
-    # Default prompts for golf course features
+    # Default prompts for golf course features (optimized for satellite/aerial imagery)
+    # Prompts emphasize distinct boundaries and specific characteristics
     GOLF_PROMPTS = {
-        "green": ["golf green", "putting green"],
-        "fairway": ["fairway", "golf fairway"],
-        "bunker": ["sand bunker", "sand trap"],
-        "tee": ["tee box", "teeing ground"],
-        "water": ["water hazard", "pond", "lake"],
-        "rough": ["rough grass"],
+        "green": [
+            # Emphasize the distinct smooth surface with clear edges
+            "putting green with distinct edge",
+            "smooth flat green surface",
+        ],
+        "fairway": [
+            "mowed fairway strip",
+            "short grass fairway",
+        ],
+        "bunker": [
+            # Sand bunkers are distinct light-colored areas
+            "white sand bunker",
+            "sand trap",
+        ],
+        "tee": [
+            "golf tee box",
+            "teeing area",
+        ],
+        "water": [
+            "pond",
+            "water hazard",
+        ],
+        "rough": [
+            "rough grass",
+        ],
     }
     
     def __init__(
@@ -43,8 +63,8 @@ class GroundingDinoDetector:
         checkpoint_path: str,
         config_path: Optional[str] = None,
         device: str = "cuda",
-        box_threshold: float = 0.35,
-        text_threshold: float = 0.25,
+        box_threshold: float = 0.25,  # Lowered from 0.35 to catch more candidates
+        text_threshold: float = 0.20,  # Lowered from 0.25 for better matching
     ):
         """
         Initialize Grounding DINO detector.
@@ -107,28 +127,40 @@ class GroundingDinoDetector:
         """
         self._load_model()
         
-        from groundingdino.util.inference import predict
+        from groundingdino.util.inference import predict, load_image
         from PIL import Image
-        import torch
+        import tempfile
+        import os
         
         box_thresh = box_threshold or self.box_threshold
         text_thresh = text_threshold or self.text_threshold
         
-        # Convert to PIL Image
-        pil_image = Image.fromarray(image)
+        # Save numpy array to temp file and use load_image for proper preprocessing
+        # This ensures we use the exact same transform the library expects
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+            tmp_path = tmp.name
+            pil_image = Image.fromarray(image)
+            pil_image.save(tmp_path)
         
-        # Join prompts with " . " as required by Grounding DINO
-        caption = " . ".join(prompts)
-        
-        # Run detection
-        boxes, logits, phrases = predict(
-            model=self._model,
-            image=pil_image,
-            caption=caption,
-            box_threshold=box_thresh,
-            text_threshold=text_thresh,
-            device=self.device,
-        )
+        try:
+            # load_image returns (source_image, transformed_tensor)
+            _, image_tensor = load_image(tmp_path)
+            
+            # Join prompts with " . " as required by Grounding DINO
+            caption = " . ".join(prompts)
+            
+            # Run detection
+            boxes, logits, phrases = predict(
+                model=self._model,
+                image=image_tensor,
+                caption=caption,
+                box_threshold=box_thresh,
+                text_threshold=text_thresh,
+                device=self.device,
+            )
+        finally:
+            # Clean up temp file
+            os.unlink(tmp_path)
         
         # Convert normalized boxes to pixel coordinates
         height, width = image.shape[:2]
@@ -136,11 +168,11 @@ class GroundingDinoDetector:
         
         for box, confidence, label in zip(boxes, logits, phrases):
             # box is in (cx, cy, w, h) normalized format
-            cx, cy, w, h = box.tolist()
-            x1 = int((cx - w/2) * width)
-            y1 = int((cy - h/2) * height)
-            x2 = int((cx + w/2) * width)
-            y2 = int((cy + h/2) * height)
+            cx, cy, bw, bh = box.tolist()
+            x1 = int((cx - bw/2) * width)
+            y1 = int((cy - bh/2) * height)
+            x2 = int((cx + bw/2) * width)
+            y2 = int((cy + bh/2) * height)
             
             detected.append(DetectedBox(
                 bbox=(x1, y1, x2, y2),
