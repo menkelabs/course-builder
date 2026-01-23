@@ -78,6 +78,17 @@ class MaskGenerator:
         self.min_mask_region_area = min_mask_region_area
         self.point_mask_box_size = point_mask_box_size
         
+        # Size preference: 0.0 = tightest/smallest masks, 1.0 = largest masks
+        # Default 0.6 = current behavior (SAM's smallest mask from 3 candidates)
+        # Values < 0.5 will apply additional area filtering for even tighter masks
+        self.size_preference = 0.6
+        
+        # Color tolerance for outline-based mask refinement (LAB color space)
+        # Lower = stricter color matching = tighter masks
+        # Scale: 0.0 (slider) -> 3.0 LAB, 1.0 (slider) -> 15.0 LAB
+        # Default 0.5 -> 6.0 LAB (current behavior)
+        self.color_tolerance = 6.0
+        
         self._sam = None
         self._mask_generator = None
         self._predictor = None
@@ -297,7 +308,7 @@ class MaskGenerator:
         self,
         image: np.ndarray,
         outline_points: List[tuple],  # List of (x, y) points from drawn outline
-        color_tolerance: float = 6.0,  # Color tolerance in LAB space (lower = stricter)
+        color_tolerance: Optional[float] = None,  # Color tolerance in LAB space (lower = stricter)
     ) -> Optional[MaskData]:
         """
         Generate a mask from a drawn outline (circle/polygon).
@@ -437,12 +448,21 @@ class MaskGenerator:
             
             edge_ratio = points_near_edge / max(1, points_inside) if points_inside > 0 else 0
             
-            # Combined score: coverage + size match + boundary alignment
-            # Weight: 30% SAM score, 25% coverage, 25% size match, 20% boundary alignment
-            combined = (0.30 * float(sam_score) + 
+            # Combined score: coverage + size match + boundary alignment + size preference
+            # Weight: 25% SAM score, 25% coverage, 20% size match, 15% boundary alignment, 15% size preference
+            # Size preference: when high, favor larger masks; when low, favor smaller
+            if self.size_preference > 0.5:
+                # Prefer larger masks - give bonus to larger sizes
+                size_pref_bonus = min(1.0, size_ratio / 2.0) * (self.size_preference - 0.5) * 2
+            else:
+                # Prefer smaller masks - give bonus to smaller sizes
+                size_pref_bonus = (1.0 - min(1.0, size_ratio)) * (0.5 - self.size_preference) * 2
+            
+            combined = (0.25 * float(sam_score) + 
                        0.25 * coverage + 
-                       0.25 * size_score + 
-                       0.20 * edge_ratio)
+                       0.20 * size_score + 
+                       0.15 * edge_ratio +
+                       0.15 * size_pref_bonus)
             
             logger.debug(f"Mask {i}: sam={sam_score:.2f}, coverage={coverage:.2f}, "
                         f"size_ratio={size_ratio:.1f}, size_score={size_score:.2f}, "
@@ -465,8 +485,11 @@ class MaskGenerator:
             py = int(ys[i] * 0.7 + center_y * 0.3)
             sample_points.append((px, py))
         
+        # Use provided tolerance or instance default
+        effective_tolerance = color_tolerance if color_tolerance is not None else self.color_tolerance
+        
         original_area = np.sum(mask)
-        mask = self._refine_mask_by_color(image, mask, sample_points, color_tolerance)
+        mask = self._refine_mask_by_color(image, mask, sample_points, effective_tolerance)
         refined_area = np.sum(mask)
         
         logger.info(f"Color refinement: {original_area} -> {refined_area} pixels "
@@ -692,23 +715,65 @@ class MaskGenerator:
         if len(masks) == 0:
             return None
         
-        # Select mask where the click point is inside and has highest score
-        best_idx = None
-        best_score = -1
+        # Select mask based on size preference and score
+        # SAM returns 3 masks: typically small, medium, large
+        # size_preference scale (recalibrated):
+        #   0.0 = tightest possible (heavy area filtering)
+        #   0.5 = tight (smallest SAM mask)
+        #   0.6 = current/default behavior
+        #   1.0 = largest SAM mask
         
-        for i, (mask, score) in enumerate(zip(masks, scores)):
-            # Check if click point is inside this mask
+        # First, filter to masks that contain the click point
+        valid_indices = []
+        for i, mask in enumerate(masks):
             if mask[int(y), int(x)]:
-                if score > best_score:
-                    best_score = score
-                    best_idx = i
+                valid_indices.append(i)
         
-        # If no mask contains the point, fall back to highest score
-        if best_idx is None:
-            best_idx = np.argmax(scores)
+        # If no mask contains the point, use all masks
+        if not valid_indices:
+            valid_indices = list(range(len(masks)))
+        
+        # Sort valid masks by area (smallest first)
+        mask_areas = [np.sum(masks[i]) for i in valid_indices]
+        sorted_by_area = sorted(zip(valid_indices, mask_areas), key=lambda x: x[1])
+        
+        # Apply area filtering for tight settings (size_preference < 0.5)
+        # At 0.0, reject masks more than 1.5x the smallest
+        # At 0.5, no filtering (just pick smallest)
+        if self.size_preference < 0.5 and len(sorted_by_area) > 1:
+            smallest_area = sorted_by_area[0][1]
+            # Calculate max allowed ratio: at pref=0, ratio=1.5; at pref=0.5, ratio=inf
+            tightness = (0.5 - self.size_preference) * 2  # 0 to 1
+            max_ratio = 1.5 + (1 - tightness) * 10  # 1.5 to 11.5
+            
+            # Filter to only masks within the ratio
+            filtered = [(idx, area) for idx, area in sorted_by_area 
+                       if area <= smallest_area * max_ratio]
+            if filtered:
+                sorted_by_area = filtered
+                logger.debug(f"Tight filtering: kept {len(filtered)} masks with ratio <= {max_ratio:.1f}")
+        
+        # Now pick from remaining masks based on size_preference
+        if len(sorted_by_area) == 1:
+            best_idx = sorted_by_area[0][0]
+        else:
+            # Map size_preference [0, 1] to index in sorted list
+            # At pref < 0.5, always pick smallest (after filtering)
+            # At pref >= 0.5, interpolate: 0.5=smallest, 1.0=largest
+            if self.size_preference < 0.5:
+                pref_index = 0  # Always smallest after filtering
+            else:
+                # Map [0.5, 1.0] to [0, len-1]
+                normalized = (self.size_preference - 0.5) * 2  # 0 to 1
+                pref_index = int(normalized * (len(sorted_by_area) - 1) + 0.5)
+            pref_index = max(0, min(pref_index, len(sorted_by_area) - 1))
+            best_idx = sorted_by_area[pref_index][0]
         
         mask = masks[best_idx]
         score = float(scores[best_idx])
+        
+        logger.debug(f"Size preference {self.size_preference:.1f}: selected mask {best_idx} "
+                    f"(area={np.sum(mask)}, {len(valid_indices)} candidates)")
         
         logger.debug(f"Selected mask {best_idx}: score={score:.3f}")
         

@@ -12,7 +12,7 @@ import logging
 try:
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
-    from matplotlib.widgets import Button
+    from matplotlib.widgets import Button, Slider
     from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
@@ -169,6 +169,12 @@ class InteractiveMaskSelector:
         self._fill_mode = False
         self._mode_text = None  # Text artist showing current mode
         
+        # Color sensitivity: 0=strictest (tight masks), 1=loosest (wide masks)
+        # Default 0.6 = current behavior (slightly right of middle)
+        # Maps to color_tolerance: 0->3.0 LAB, 0.5->6.0 LAB, 1.0->15.0 LAB
+        self._color_sensitivity = 0.6
+        self._sensitivity_slider = None
+        
     def _setup_instructions_panel(self):
         """Setup the left instructions panel with controls and shortcuts."""
         ax = self.ax_instructions
@@ -199,7 +205,6 @@ class InteractiveMaskSelector:
             "  Scroll = Zoom in/out",
             "  Drag = Pan (toolbar)",
             "",
-            "─" * 15,
         ]
         
         y_pos = 0.90
@@ -208,18 +213,26 @@ class InteractiveMaskSelector:
                     ha='left', va='top', transform=ax.transAxes)
             y_pos -= 0.04
         
+        # Sensitivity slider section
+        ax.text(0.5, 0.36, "─" * 15, fontsize=9, fontfamily='monospace',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.33, "COLOR SENSITIVITY", fontsize=10, fontweight='bold',
+                ha='center', va='top', transform=ax.transAxes)
+        ax.text(0.5, 0.30, "(how strict color matching is)", fontsize=8,
+                ha='center', va='top', transform=ax.transAxes)
+        
         # Mode indicator (will be updated in _update_instructions)
-        self._mode_label = ax.text(0.5, 0.22, "Mode: SAM", fontsize=12, fontweight='bold',
+        self._mode_label = ax.text(0.5, 0.17, "Mode: SAM", fontsize=12, fontweight='bold',
                                    ha='center', va='top', transform=ax.transAxes,
                                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
         
         # Selected count
-        self._selected_label = ax.text(0.5, 0.14, "Selected: 0", fontsize=11,
+        self._selected_label = ax.text(0.5, 0.10, "Selected: 0", fontsize=11,
                                        ha='center', va='top', transform=ax.transAxes,
                                        bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
         
         # Current task hint
-        self._task_label = ax.text(0.5, 0.06, "", fontsize=9, style='italic',
+        self._task_label = ax.text(0.5, 0.03, "", fontsize=9, style='italic',
                                    ha='center', va='top', transform=ax.transAxes,
                                    wrap=True)
     
@@ -481,6 +494,30 @@ class InteractiveMaskSelector:
         if self.done_callback:
             self.done_callback()
     
+    def _on_sensitivity_changed(self, val):
+        """Handle color sensitivity slider change."""
+        self._color_sensitivity = val
+        self._update_color_tolerance(val)
+    
+    def _update_color_tolerance(self, sensitivity):
+        """Convert slider value to color tolerance and update mask generator."""
+        # Map sensitivity [0, 1] to color_tolerance LAB
+        # Calibrated so 0.6 (default) = 6.0 LAB (original working value)
+        # 0.0 = very strict (2.0 LAB)
+        # 0.6 = default (6.0 LAB) 
+        # 1.0 = loose (15.0 LAB)
+        if sensitivity <= 0.6:
+            # Linear from 2.0 to 6.0 over [0, 0.6]
+            color_tolerance = 2.0 + (sensitivity / 0.6) * 4.0
+        else:
+            # Linear from 6.0 to 15.0 over [0.6, 1.0]
+            color_tolerance = 6.0 + ((sensitivity - 0.6) / 0.4) * 9.0
+        
+        if hasattr(self.selector, 'mask_generator'):
+            self.selector.mask_generator.color_tolerance = color_tolerance
+        
+        logger.info(f"Color sensitivity: {sensitivity:.2f} -> tolerance: {color_tolerance:.1f} LAB")
+    
     def _on_scroll(self, event):
         """Handle mouse wheel scroll for zooming."""
         if event.inaxes != self.ax:
@@ -733,6 +770,23 @@ class InteractiveMaskSelector:
         ax_button = self.fig.add_axes([0.85, 0.01, 0.13, 0.03])
         self.done_button = Button(ax_button, 'Done (Enter/Space)', color='lightgreen', hovercolor='green')
         self.done_button.on_clicked(self._on_done)
+        
+        # Add Color Sensitivity slider in the instructions panel area
+        # Position: [left, bottom, width, height] in figure coordinates
+        ax_sens_slider = self.fig.add_axes([0.02, 0.24, 0.11, 0.02])
+        self._sensitivity_slider = Slider(
+            ax_sens_slider, '', 0.0, 1.0, valinit=self._color_sensitivity,
+            valstep=0.05, color='steelblue'
+        )
+        self._sensitivity_slider.on_changed(self._on_sensitivity_changed)
+        
+        # Add labels for slider (Strict = tighter color match, Loose = wider color match)
+        ax_sens_slider.text(-0.05, 0.5, 'Strict', fontsize=8, ha='right', va='center', transform=ax_sens_slider.transAxes)
+        ax_sens_slider.text(1.05, 0.5, 'Loose', fontsize=8, ha='left', va='center', transform=ax_sens_slider.transAxes)
+        
+        # Initialize the mask generator's color tolerance
+        if hasattr(self.selector, 'mask_generator'):
+            self._update_color_tolerance(self._color_sensitivity)
         
         # Connect event handlers
         # Drawing mode: press to start, motion to draw, release to finish
