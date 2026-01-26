@@ -1,0 +1,22 @@
+# Python Agent for Course Builder
+# Core dependencies
+
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0.0
+
+# HTTP client for registration
+httpx>=0.26.0
+
+# CLI
+click>=8.1.0
+
+# Optional: Phase2A integration (installed separately)
+# numpy
+# pillow
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.23.0
+httpx  # for TestClient
