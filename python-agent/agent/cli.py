@@ -39,7 +39,7 @@ def cli():
     """
     Python Agent for Course Builder
     
-    Exposes Phase2A and other pipeline tools as remote actions
+    Exposes Phase 1A and other pipeline tools as remote actions
     for the Embabel agent platform.
     """
     pass
@@ -296,7 +296,7 @@ def execute(
     Execute an action locally (for testing).
     
     Example:
-        python -m agent execute phase2a_validate --params output_dir=/output/phase2a
+        python -m agent execute phase1a_validate --params output_dir=/output/phase1a
     """
     setup_logging(verbose)
     

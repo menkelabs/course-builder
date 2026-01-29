@@ -56,7 +56,7 @@ def create_app(registry: ActionRegistry = None) -> FastAPI:
     """
     app = FastAPI(
         title="Course Builder Python Agent",
-        description="Python-based agent exposing Phase2A and other pipeline tools as remote actions",
+        description="Python-based agent exposing Phase 1A and other pipeline tools as remote actions",
         version="0.1.0",
         lifespan=lifespan,
     )

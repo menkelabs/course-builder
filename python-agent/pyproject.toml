@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "python-agent"
 version = "0.1.0"
-description = "Python Agent for Course Builder - exposes Phase2A and other pipeline tools as remote actions"
+description = "Python Agent for Course Builder - exposes Phase 1A and other pipeline tools as remote actions"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
@@ -38,8 +38,8 @@ dev = [
     "black",
     "ruff",
 ]
-phase2a = [
-    # Phase2A dependencies for actual pipeline execution
+phase1a = [
+    # Phase 1A dependencies for actual pipeline execution
     "numpy",
     "pillow",
 ]

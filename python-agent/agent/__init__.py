@@ -1,7 +1,7 @@
 """
 Python Agent for Course Builder
 
-A Python-based agent that exposes Phase2A and other pipeline tools
+A Python-based agent that exposes Phase 1A and other pipeline tools
 as remote actions following the embabel-agent-remote REST API pattern.
 
 This enables Python tools to participate in the Embabel agent platform's

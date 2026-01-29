@@ -3,7 +3,7 @@
 #
 # Note: This project uses a shared .venv at the project root.
 # Dependencies are pinned to match the installed versions in that environment.
-# To update: cd to project root and run: .venv/bin/pip freeze > phase1/requirements.txt
+# To update: cd to project root and run: .venv/bin/pip freeze > archive/phase1/requirements.txt
 
 # CLI and utilities
 click==8.3.1
@@ -48,7 +48,9 @@ tzdata==2025.3
 # GDAL library itself must be installed separately
 # See: https://gdal.org/download.html
 
-# Optional: for development
+# Optional: dev (matches pyproject [dev])
 pytest==9.0.2
+# pytest-cov>=4.0.0
 # black>=23.0.0
+# ruff>=0.1.0
 # mypy>=1.0.0

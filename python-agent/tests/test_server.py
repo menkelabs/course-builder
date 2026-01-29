@@ -137,61 +137,61 @@ class TestExecuteEndpoint:
         assert data["result"]["output1"] == "processed: none"
 
 
-class TestPhase2AActionsIntegration:
-    """Integration tests for Phase2A actions."""
+class TestPhase1AActionsIntegration:
+    """Integration tests for Phase 1A actions."""
     
     @pytest.fixture
-    def phase2a_client(self):
-        """Create a client with Phase2A actions registered."""
+    def phase1a_client(self):
+        """Create a client with Phase 1A actions registered."""
         import importlib
         from agent.registry import reset_registry, get_registry
         
         reset_registry()
         
-        # Import and reload phase2a actions to re-register them
-        import agent.actions.phase2a as phase2a_module
-        importlib.reload(phase2a_module)
+        # Import and reload phase1a actions to re-register them
+        import agent.actions.phase1a as phase1a_module
+        importlib.reload(phase1a_module)
         
         registry = get_registry()
         app = create_app(registry)
         return TestClient(app)
     
-    def test_list_phase2a_actions(self, phase2a_client):
-        """Test that Phase2A actions are listed."""
-        response = phase2a_client.get("/api/v1/actions")
+    def test_list_phase1a_actions(self, phase1a_client):
+        """Test that Phase 1A actions are listed."""
+        response = phase1a_client.get("/api/v1/actions")
         assert response.status_code == 200
         
         actions = response.json()
         action_names = [a["name"] for a in actions]
         
-        # Check for expected Phase2A actions
-        assert "phase2a_run" in action_names
-        assert "phase2a_generate_masks" in action_names
-        assert "phase2a_classify" in action_names
-        assert "phase2a_validate" in action_names
+        # Check for expected Phase 1A actions
+        assert "phase1a_run" in action_names
+        assert "phase1a_generate_masks" in action_names
+        assert "phase1a_classify" in action_names
+        assert "phase1a_validate" in action_names
     
-    def test_list_phase2a_types(self, phase2a_client):
-        """Test that Phase2A types are listed."""
-        response = phase2a_client.get("/api/v1/types")
+    def test_list_phase1a_types(self, phase1a_client):
+        """Test that Phase 1A types are listed."""
+        response = phase1a_client.get("/api/v1/types")
         assert response.status_code == 200
         
         types = response.json()
         type_names = [t["name"] for t in types]
         
         # Check for expected types
-        assert "Phase2AConfig" in type_names
-        assert "Phase2AResult" in type_names
+        assert "Phase1AConfig" in type_names
+        assert "Phase1AResult" in type_names
     
-    def test_execute_phase2a_validate(self, phase2a_client, tmp_path):
-        """Test executing phase2a_validate action."""
+    def test_execute_phase1a_validate(self, phase1a_client, tmp_path):
+        """Test executing phase1a_validate action."""
         # Create a minimal output directory
-        output_dir = tmp_path / "phase2a_output"
+        output_dir = tmp_path / "phase1a_output"
         output_dir.mkdir()
         
-        response = phase2a_client.post(
+        response = phase1a_client.post(
             "/api/v1/actions/execute",
             json={
-                "action_name": "phase2a_validate",
+                "action_name": "phase1a_validate",
                 "parameters": {"output_dir": str(output_dir)},
             },
         )

@@ -1,16 +1,16 @@
 """
-Phase2A Actions for the Python Agent.
+Phase 1A Actions for the Python Agent.
 
-Exposes Phase2A pipeline functionality as remote actions that can
+Exposes Phase 1A pipeline functionality as remote actions that can
 participate in Embabel's GOAP planning and execution.
 
 Actions:
-- phase2a_run: Run complete pipeline
-- phase2a_generate_masks: Generate SAM masks
-- phase2a_classify: Classify masks as features
-- phase2a_generate_svg: Generate SVG output
-- phase2a_export_png: Export SVG to PNG
-- phase2a_validate: Validate pipeline output
+- phase1a_run: Run complete pipeline
+- phase1a_generate_masks: Generate SAM masks
+- phase1a_classify: Classify masks as features
+- phase1a_generate_svg: Generate SVG output
+- phase1a_export_png: Export SVG to PNG
+- phase1a_validate: Validate pipeline output
 """
 
 import logging
@@ -31,11 +31,11 @@ registry = get_registry()
 # Type Definitions
 # =============================================================================
 
-# Define domain types for Phase2A inputs/outputs
+# Define domain types for Phase 1A inputs/outputs
 
-Phase2AConfig = DynamicType(
-    name="Phase2AConfig",
-    description="Configuration for Phase2A pipeline execution",
+Phase1AConfig = DynamicType(
+    name="Phase1AConfig",
+    description="Configuration for Phase 1A pipeline execution",
     own_properties=[
         PropertyDef("satellite_image", "string", "Path to satellite image (PNG/JPG)"),
         PropertyDef("checkpoint", "string", "Path to SAM checkpoint file"),
@@ -48,9 +48,9 @@ Phase2AConfig = DynamicType(
     ],
 )
 
-Phase2AResult = DynamicType(
-    name="Phase2AResult",
-    description="Result from Phase2A pipeline execution",
+Phase1AResult = DynamicType(
+    name="Phase1AResult",
+    description="Result from Phase 1A pipeline execution",
     own_properties=[
         PropertyDef("svg_file", "string", "Path to generated SVG file"),
         PropertyDef("png_file", "string", "Path to exported PNG overlay"),
@@ -104,7 +104,7 @@ ValidationResult = DynamicType(
 )
 
 # Register all types
-for dtype in [Phase2AConfig, Phase2AResult, MaskGenerationResult, 
+for dtype in [Phase1AConfig, Phase1AResult, MaskGenerationResult, 
               ClassificationResult, SVGGenerationResult, ValidationResult]:
     registry.register_type(dtype)
 
@@ -113,18 +113,18 @@ for dtype in [Phase2AConfig, Phase2AResult, MaskGenerationResult,
 # Helper Functions
 # =============================================================================
 
-def _get_phase2a_client(params: Dict[str, Any]):
-    """Create a Phase2A client with given parameters."""
+def _get_phase1a_client(params: Dict[str, Any]):
+    """Create a Phase 1A client with given parameters."""
     try:
-        # Add phase2a to path if needed
-        phase2a_path = Path(__file__).parent.parent.parent.parent / "phase2a"
-        if str(phase2a_path) not in sys.path:
-            sys.path.insert(0, str(phase2a_path.parent))
+        # Add phase1a to path if needed
+        phase1a_path = Path(__file__).parent.parent.parent.parent / "phase1a"
+        if str(phase1a_path) not in sys.path:
+            sys.path.insert(0, str(phase1a_path.parent))
         
-        from phase2a.client import Phase2AClient
-        from phase2a.config import Phase2AConfig as Phase2AConfigClass
+        from phase1a.client import Phase1AClient
+        from phase1a.config import Phase1AConfig as Phase1AConfigClass
         
-        config = Phase2AConfigClass()
+        config = Phase1AConfigClass()
         
         if "satellite_image" in params:
             config.input_image = Path(params["satellite_image"])
@@ -143,9 +143,9 @@ def _get_phase2a_client(params: Dict[str, Any]):
         if "verbose" in params:
             config.verbose = params["verbose"]
         
-        return Phase2AClient(config)
+        return Phase1AClient(config)
     except ImportError as e:
-        logger.warning(f"Phase2A not available: {e}")
+        logger.warning(f"Phase 1A not available: {e}")
         return None
 
 
@@ -154,26 +154,26 @@ def _get_phase2a_client(params: Dict[str, Any]):
 # =============================================================================
 
 @registry.action(
-    name="phase2a_run",
-    description="Run the complete Phase2A pipeline: satellite image → SAM masks → "
+    name="phase1a_run",
+    description="Run the complete Phase1A pipeline: satellite image → SAM masks → "
                 "classification → SVG. Automatically extracts and classifies course features.",
-    inputs=[Io("config", "Phase2AConfig")],
-    outputs=[Io("result", "Phase2AResult")],
+    inputs=[Io("config", "Phase1AConfig")],
+    outputs=[Io("result", "Phase1AResult")],
     pre=["satellite_image_exists"],
     post=["svg_complete"],
     cost=0.8,
     value=0.9,
     can_rerun=True,
 )
-async def phase2a_run(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Run complete Phase2A pipeline."""
+async def phase1a_run(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Run complete Phase1A pipeline."""
     config = params.get("config", params)  # Allow direct params or nested config
     
-    client = _get_phase2a_client(config)
+    client = _get_phase1a_client(config)
     
     if client is None:
         # Return mock result for testing/development
-        output_dir = config.get("output_dir", "/output/phase2a/")
+        output_dir = config.get("output_dir", "/output/phase1a/")
         return {
             "svg_file": f"{output_dir}/course.svg",
             "png_file": f"{output_dir}/exports/overlay.png",
@@ -206,12 +206,12 @@ async def phase2a_run(params: Dict[str, Any]) -> Dict[str, Any]:
             "valid": client.validate(),
         }
     except Exception as e:
-        logger.exception(f"Phase2A pipeline error: {e}")
+        logger.exception(f"Phase1A pipeline error: {e}")
         raise
 
 
 @registry.action(
-    name="phase2a_generate_masks",
+    name="phase1a_generate_masks",
     description="Generate candidate masks from satellite image using SAM (Segment Anything Model).",
     inputs=[
         Io("satellite_image", "string"),
@@ -225,13 +225,13 @@ async def phase2a_run(params: Dict[str, Any]) -> Dict[str, Any]:
     value=0.3,
     can_rerun=True,
 )
-async def phase2a_generate_masks(params: Dict[str, Any]) -> Dict[str, Any]:
+async def phase1a_generate_masks(params: Dict[str, Any]) -> Dict[str, Any]:
     """Generate SAM masks from satellite image."""
     satellite_image = params.get("satellite_image")
     checkpoint = params.get("checkpoint")
     output_dir = params.get("output_dir", "/output/masks/")
     
-    client = _get_phase2a_client(params)
+    client = _get_phase1a_client(params)
     
     if client is None:
         # Mock result
@@ -260,7 +260,7 @@ async def phase2a_generate_masks(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @registry.action(
-    name="phase2a_classify",
+    name="phase1a_classify",
     description="Classify masks as water, bunker, green, fairway, rough, or ignore "
                 "based on color/texture analysis.",
     inputs=[
@@ -274,11 +274,11 @@ async def phase2a_generate_masks(params: Dict[str, Any]) -> Dict[str, Any]:
     value=0.4,
     can_rerun=True,
 )
-async def phase2a_classify(params: Dict[str, Any]) -> Dict[str, Any]:
+async def phase1a_classify(params: Dict[str, Any]) -> Dict[str, Any]:
     """Classify masks as course features."""
     masks_dir = params.get("masks_dir")
     
-    client = _get_phase2a_client(params)
+    client = _get_phase1a_client(params)
     
     if client is None:
         # Mock result
@@ -316,7 +316,7 @@ async def phase2a_classify(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @registry.action(
-    name="phase2a_generate_svg",
+    name="phase1a_generate_svg",
     description="Generate layered SVG from classified features and hole assignments. "
                 "Creates course.svg with proper layers for Unity/Blender/GSPro.",
     inputs=[
@@ -331,13 +331,13 @@ async def phase2a_classify(params: Dict[str, Any]) -> Dict[str, Any]:
     value=0.5,
     can_rerun=True,
 )
-async def phase2a_generate_svg(params: Dict[str, Any]) -> Dict[str, Any]:
+async def phase1a_generate_svg(params: Dict[str, Any]) -> Dict[str, Any]:
     """Generate SVG from classified features."""
-    output_dir = params.get("output_dir", "/output/phase2a/")
+    output_dir = params.get("output_dir", "/output/phase1a/")
     include_hole_98 = params.get("include_hole_98", True)
     include_hole_99 = params.get("include_hole_99", True)
     
-    client = _get_phase2a_client(params)
+    client = _get_phase1a_client(params)
     
     if client is None:
         # Mock result
@@ -369,7 +369,7 @@ async def phase2a_generate_svg(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @registry.action(
-    name="phase2a_export_png",
+    name="phase1a_export_png",
     description="Export SVG to PNG overlay for Unity terrain visualization.",
     inputs=[
         Io("svg_file", "string"),
@@ -383,7 +383,7 @@ async def phase2a_generate_svg(params: Dict[str, Any]) -> Dict[str, Any]:
     value=0.3,
     can_rerun=True,
 )
-async def phase2a_export_png(params: Dict[str, Any]) -> Dict[str, Any]:
+async def phase1a_export_png(params: Dict[str, Any]) -> Dict[str, Any]:
     """Export SVG to PNG overlay."""
     svg_file = params.get("svg_file")
     output_file = params.get("output_file")
@@ -393,12 +393,12 @@ async def phase2a_export_png(params: Dict[str, Any]) -> Dict[str, Any]:
         output_file = str(Path(svg_file).with_suffix(".png"))
     
     try:
-        # Add phase2a to path if needed
-        phase2a_path = Path(__file__).parent.parent.parent.parent / "phase2a"
-        if str(phase2a_path) not in sys.path:
-            sys.path.insert(0, str(phase2a_path.parent))
+        # Add phase1a to path if needed
+        phase1a_path = Path(__file__).parent.parent.parent.parent / "phase1a"
+        if str(phase1a_path) not in sys.path:
+            sys.path.insert(0, str(phase1a_path.parent))
         
-        from phase2a.pipeline.export import PNGExporter
+        from phase1a.pipeline.export import PNGExporter
         
         exporter = PNGExporter(width=resolution, height=resolution)
         exporter.export(Path(svg_file), Path(output_file))
@@ -420,8 +420,8 @@ async def phase2a_export_png(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @registry.action(
-    name="phase2a_validate",
-    description="Validate Phase2A output directory - check all required files and "
+    name="phase1a_validate",
+    description="Validate Phase 1A output directory - check all required files and "
                 "metadata are present (svg_complete gate).",
     inputs=[Io("output_dir", "string")],
     outputs=[Io("result", "ValidationResult")],
@@ -431,9 +431,9 @@ async def phase2a_export_png(params: Dict[str, Any]) -> Dict[str, Any]:
     value=0.2,
     can_rerun=True,
 )
-async def phase2a_validate(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate Phase2A output."""
-    output_dir = Path(params.get("output_dir", "/output/phase2a/"))
+async def phase1a_validate(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate Phase1A output."""
+    output_dir = Path(params.get("output_dir", "/output/phase1a/"))
     
     checks = {}
     errors = []

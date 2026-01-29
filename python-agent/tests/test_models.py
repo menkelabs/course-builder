@@ -22,9 +22,9 @@ class TestIo:
         assert io.type == "string"
     
     def test_to_dict(self):
-        io = Io(name="config", type="Phase2AConfig")
+        io = Io(name="config", type="Phase1AConfig")
         result = io.to_dict()
-        assert result == {"name": "config", "type": "Phase2AConfig"}
+        assert result == {"name": "config", "type": "Phase1AConfig"}
 
 
 class TestPropertyDef:
@@ -88,16 +88,16 @@ class TestActionMetadata:
     
     def test_create_action(self):
         action = ActionMetadata(
-            name="phase2a_run",
-            description="Run Phase2A pipeline",
-            inputs=[Io("config", "Phase2AConfig")],
-            outputs=[Io("result", "Phase2AResult")],
+            name="phase1a_run",
+            description="Run Phase1A pipeline",
+            inputs=[Io("config", "Phase1AConfig")],
+            outputs=[Io("result", "Phase1AResult")],
             pre=["satellite_image_exists"],
             post=["svg_complete"],
             cost=0.8,
             value=0.9,
         )
-        assert action.name == "phase2a_run"
+        assert action.name == "phase1a_run"
         assert len(action.inputs) == 1
         assert len(action.outputs) == 1
         assert action.pre == ["satellite_image_exists"]

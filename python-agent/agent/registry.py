@@ -30,14 +30,14 @@ class ActionRegistry:
         registry = ActionRegistry()
         
         @registry.action(
-            name="phase2a_run",
-            description="Run Phase2A pipeline",
-            inputs=[Io("config", "Phase2AConfig")],
-            outputs=[Io("result", "Phase2AResult")],
+            name="phase1a_run",
+            description="Run Phase 1A pipeline",
+            inputs=[Io("config", "Phase1AConfig")],
+            outputs=[Io("result", "Phase1AResult")],
             pre=["satellite_image_exists"],
             post=["svg_complete"],
         )
-        async def run_phase2a(params: Dict[str, Any]) -> Dict[str, Any]:
+        async def run_phase1a(params: Dict[str, Any]) -> Dict[str, Any]:
             # Implementation
             return {"svg_path": "/output/course.svg"}
     """

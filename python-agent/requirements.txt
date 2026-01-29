@@ -1,22 +1,20 @@
-# Python Agent for Course Builder
-# Core dependencies
+# Python Agent for Course Builder (Phase 1A only)
+# Install: pip install -e .  or  pip install -e ".[dev]"  or  pip install -r requirements.txt
+# Full Phase 1A pipeline: also pip install -e ../phase1a[all]  (from repo root)
 
-# Web framework
+# Core
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.0.0
-
-# HTTP client for registration
 httpx>=0.26.0
-
-# CLI
 click>=8.1.0
 
-# Optional: Phase2A integration (installed separately)
-# numpy
-# pillow
-
-# Testing
+# Dev
 pytest>=7.0.0
 pytest-asyncio>=0.23.0
-httpx  # for TestClient
+black
+ruff
+
+# Optional Phase 1A extra (pip install -e ".[phase1a]")
+# numpy>=1.24.0
+# pillow>=10.0.0

@@ -26,7 +26,7 @@ WorkflowState = DynamicType(
     name="WorkflowState",
     description="Current state of course building workflow",
     own_properties=[
-        PropertyDef("current_phase", "string", "Current phase (phase1, phase2a, blender, unity)"),
+        PropertyDef("current_phase", "string", "Current phase (phase1a, blender, unity)"),
         PropertyDef("completed_gates", "array", "List of completed workflow gates"),
         PropertyDef("artifacts", "object", "Map of artifact names to paths"),
     ],
