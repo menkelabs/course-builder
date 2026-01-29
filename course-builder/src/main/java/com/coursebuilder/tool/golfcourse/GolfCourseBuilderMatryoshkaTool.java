@@ -12,12 +12,12 @@ import java.util.List;
  * This tool serves as the entry point for the "None to Done" workflow.
  * It contains nested tools for each MCP server in the pipeline:
  * 
- * LIDAR → Unity (Terrain) → Phase2a (SAM-based SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final)
+ * LIDAR → Unity (Terrain) → Phase1a (SAM-based SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final)
  * 
- * Hierarchy matches plan.md (with Phase2a replacing manual Inkscape):
+ * Hierarchy matches plan.md (with Phase1a replacing manual Inkscape):
  * GolfCourseBuilderTool
  * ├── LidarMcpTool (Phase 1: Terrain Creation)
- * ├── Phase2aMcpTool (Phase 2: Automated SAM-based SVG generation - replaces Inkscape)
+ * ├── Phase1aMcpTool (Phase 2: Automated SAM-based SVG generation - replaces Inkscape)
  * ├── UnityTerrainMcpTool (Phase 3: Terrain Refinement)
  * ├── SvgConvertMcpTool (Phase 4: SVG Conversion)
  * ├── BlenderMcpTool (Phase 5: Blender Mesh Operations)
@@ -28,7 +28,7 @@ public class GolfCourseBuilderMatryoshkaTool extends MatryoshkaTool {
     
     public GolfCourseBuilderMatryoshkaTool(
             LidarMcpTool lidarMcp,
-            Phase2aMcpTool phase2aMcp,
+            Phase1aMcpTool phase1aMcp,
             UnityTerrainMcpTool unityTerrainMcp,
             SvgConvertMcpTool svgConvertMcp,
             BlenderMcpTool blenderMcp,
@@ -37,10 +37,10 @@ public class GolfCourseBuilderMatryoshkaTool extends MatryoshkaTool {
         super(
             "golf_course_builder",
             "Complete GSPro golf course creation toolkit implementing the 'None to Done' workflow. " +
-            "Orchestrates LIDAR processing, Phase2a SAM-based SVG generation, Unity terrain, Blender mesh conversion, " +
+            "Orchestrates LIDAR processing, Phase1a SAM-based SVG generation, Unity terrain, Blender mesh conversion, " +
             "and final Unity assembly. Select 'list' to see available MCP tool groups for each phase.",
             "golfcourse",
-            List.of(lidarMcp, phase2aMcp, unityTerrainMcp, svgConvertMcp, blenderMcp, unityAssemblyMcp)
+            List.of(lidarMcp, phase1aMcp, unityTerrainMcp, svgConvertMcp, blenderMcp, unityAssemblyMcp)
         );
     }
 }

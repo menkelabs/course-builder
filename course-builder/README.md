@@ -20,12 +20,12 @@ The combination creates an intelligent, autonomous agent that can:
 ### The "None to Done" Workflow
 
 ```
-LIDAR → Unity (Terrain) → Phase2a (SAM SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final)
+LIDAR → Unity (Terrain) → Phase1a (SAM SVG) → Unity (PNG) → Blender (Mesh) → Unity (Final)
 ```
 
 **6 Phases:**
 1. **Terrain Creation** (LIDAR) - Generate heightmap, set up Unity terrain
-2. **Course Tracing** (Phase2a) - SAM-based automated satellite tracing
+2. **Course Tracing** (Phase1a) - SAM-based automated satellite tracing
 3. **Terrain Refinement** (Unity) - Apply overlay, adjust contours, export OBJ
 4. **SVG Conversion** - GSProSVGConvert.exe processing
 5. **Blender Processing** - Mesh import, conversion, peripherals, FBX export
@@ -40,13 +40,13 @@ golf_course_builder (top-level)
 ├── lidar_mcp
 │   ├── lidar_to_heightmap
 │   └── unity_setup_terrain
-├── phase2a_mcp
-│   ├── phase2a_run
-│   ├── phase2a_generate_masks
-│   ├── phase2a_classify
-│   ├── phase2a_interactive_select
-│   ├── phase2a_generate_svg
-│   └── phase2a_validate
+├── phase1a_mcp
+│   ├── phase1a_run
+│   ├── phase1a_generate_masks
+│   ├── phase1a_classify
+│   ├── phase1a_interactive_select
+│   ├── phase1a_generate_svg
+│   └── phase1a_validate
 ├── unity_terrain_mcp
 │   ├── unity_apply_terrain_overlay
 │   ├── unity_adjust_terrain_contours
@@ -81,7 +81,7 @@ course-builder/
 │   │   ├── Agent.java           # Agent interface
 │   │   ├── AgentRouter.java     # Routes tasks to appropriate agent
 │   │   ├── GolfCourseWorkflowAgent.java  # Main workflow orchestrator
-│   │   ├── Phase2aAgent.java    # SAM-based tracing specialist
+│   │   ├── Phase1aAgent.java    # SAM-based tracing specialist
 │   │   └── BlenderAgent.java    # Mesh operations specialist
 │   ├── tool/                    # Matryoshka Tools
 │   │   ├── Tool.java            # Tool interface
@@ -90,7 +90,7 @@ course-builder/
 │   │   └── golfcourse/          # Golf course specific tools
 │   │       ├── GolfCourseBuilderMatryoshkaTool.java
 │   │       ├── LidarMcpTool.java
-│   │       ├── Phase2aMcpTool.java
+│   │       ├── Phase1aMcpTool.java
 │   │       ├── UnityTerrainMcpTool.java
 │   │       ├── SvgConvertMcpTool.java
 │   │       ├── BlenderMcpTool.java
@@ -190,7 +190,7 @@ Current State: {terrain_ready: true, svg_complete: false, ...}
 Planner evaluates:
   1. Check preconditions for each available action
   2. Find actions whose effects advance toward goal
-  3. Chain actions: phase2a_run → svg_convert → blender_export → unity_build
+  3. Chain actions: phase1a_run → svg_convert → blender_export → unity_build
   4. Execute plan, update world state after each action
   5. Replan if action fails or state changes unexpectedly
 ```
@@ -198,7 +198,7 @@ Planner evaluates:
 ### Agents
 High-level AI coordinators that implement GOAP planning to understand user intent and orchestrate tool execution:
 - **GolfCourseWorkflowAgent**: Main GOAP planner for the complete workflow, manages goals and world state
-- **Phase2aAgent**: Specialist planner for SAM-based tracing sub-goals
+- **Phase1aAgent**: Specialist planner for SAM-based tracing sub-goals
 - **BlenderAgent**: Specialist planner for mesh operation sub-goals
 
 ### Matryoshka Tools
@@ -222,13 +222,13 @@ Checkpoints that must be completed before proceeding:
 - **Hole 98**: Cart paths (features that cut through other objects)
 - **Hole 99**: Outer mesh (deep rough spanning multiple holes)
 
-## Integration with Phase2a
+## Integration with Phase1a
 
-This project integrates with the existing Phase2a Python pipeline for SAM-based course tracing. The `Phase2aMcpTool` wraps the Python CLI:
+This project integrates with the existing Phase1a Python pipeline for SAM-based course tracing. The `Phase1aMcpTool` wraps the Python CLI:
 
 ```bash
-phase2a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
-phase2a select satellite.png --checkpoint ... -o output/  # Interactive mode
+phase1a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
+phase1a select satellite.png --checkpoint ... -o output/  # Interactive mode
 ```
 
 ## References

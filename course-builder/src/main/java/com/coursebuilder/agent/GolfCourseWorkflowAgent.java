@@ -15,7 +15,7 @@ import java.util.Map;
  * 
  * This agent coordinates all 6 phases of the workflow:
  * 1. Terrain Creation (LIDAR)
- * 2. Course Tracing (Phase2a - SAM-based)
+ * 2. Course Tracing (Phase1a - SAM-based)
  * 3. Terrain Refinement (Unity)
  * 4. SVG Conversion
  * 5. Blender Processing
@@ -86,7 +86,7 @@ public class GolfCourseWorkflowAgent extends AbstractAgent {
             return handlePhase1(context, userMessage);
         }
         
-        if (lowerMessage.contains("phase2a") || lowerMessage.contains("sam") || 
+        if (lowerMessage.contains("phase1a") || lowerMessage.contains("sam") || 
             lowerMessage.contains("satellite") || lowerMessage.contains("trace") ||
             lowerMessage.contains("phase 2")) {
             return handlePhase2(context, userMessage);
@@ -126,7 +126,7 @@ public class GolfCourseWorkflowAgent extends AbstractAgent {
         response.append("**Phase 1: Terrain Creation** (LIDAR)\n");
         response.append("  - Download LIDAR data and create heightmap\n");
         response.append("  - Set up Unity terrain with dimensions\n\n");
-        response.append("**Phase 2: Course Tracing** (Phase2a - Automated SAM)\n");
+        response.append("**Phase 2: Course Tracing** (Phase1a - Automated SAM)\n");
         response.append("  - Generate masks from satellite imagery using SAM\n");
         response.append("  - Classify features (greens, fairways, bunkers, water)\n");
         response.append("  - Interactive hole-by-hole assignment\n");
@@ -251,8 +251,8 @@ public class GolfCourseWorkflowAgent extends AbstractAgent {
                              userMessage.toLowerCase().contains("select");
         
         if (interactive) {
-            ToolResult result = executeTool("phase2a_mcp", Map.of(
-                "operation", "phase2a_interactive_select",
+            ToolResult result = executeTool("phase1a_mcp", Map.of(
+                "operation", "phase1a_interactive_select",
                 "parameters", Map.of(
                     "courseId", courseId,
                     "satelliteImage", "/input/satellite.png",
@@ -269,13 +269,13 @@ public class GolfCourseWorkflowAgent extends AbstractAgent {
                 "- Esc: Clear selection\n" +
                 "- Done button: Next feature type\n\n" +
                 "The workflow will guide you through assigning greens, tees, fairways, and bunkers for each hole.",
-                List.of(AgentResponse.ToolInvocation.of("phase2a_interactive_select", Map.of(), result.data()))
+                List.of(AgentResponse.ToolInvocation.of("phase1a_interactive_select", Map.of(), result.data()))
             );
         }
         
         // Full automated pipeline
-        ToolResult result = executeTool("phase2a_mcp", Map.of(
-            "operation", "phase2a_run",
+        ToolResult result = executeTool("phase1a_mcp", Map.of(
+            "operation", "phase1a_run",
             "parameters", Map.of(
                 "courseId", courseId,
                 "satelliteImage", "/input/satellite.png",
@@ -288,7 +288,7 @@ public class GolfCourseWorkflowAgent extends AbstractAgent {
             "SVG generated with automatic feature classification.\n\n" +
             "Features detected:\n" + result.data().get("featuresClassified") + "\n\n" +
             "Ready for Phase 3: Terrain Refinement. Proceed?",
-            List.of(AgentResponse.ToolInvocation.of("phase2a_run", Map.of(), result.data()))
+            List.of(AgentResponse.ToolInvocation.of("phase1a_run", Map.of(), result.data()))
         );
     }
     
