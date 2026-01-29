@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.*;
  * Tests the complete "None to Done" workflow from plan.md:
  * 
  * Phase 1: Terrain Creation (LIDAR)
- * Phase 2: Course Tracing (Phase2a - SAM-based)
+ * Phase 2: Course Tracing (Phase1a - SAM-based)
  * Phase 3: Terrain Refinement (Unity)
  * Phase 4: SVG Conversion
  * Phase 5: Blender Processing
@@ -44,7 +44,7 @@ public class GolfCourseTestHarness {
     
     // Matryoshka Tools - All 6 Phases
     private LidarMcpTool lidarMcp;
-    private Phase2aMcpTool phase2aMcp;
+    private Phase1aMcpTool phase1aMcp;
     private UnityTerrainMcpTool unityTerrainMcp;
     private SvgConvertMcpTool svgConvertMcp;
     private BlenderMcpTool blenderMcp;
@@ -53,7 +53,7 @@ public class GolfCourseTestHarness {
     
     // Agents
     private GolfCourseWorkflowAgent workflowAgent;
-    private Phase2aAgent phase2aAgent;
+    private Phase1aAgent phase1aAgent;
     private BlenderAgent blenderAgent;
     private AgentRouter agentRouter;
     
@@ -69,7 +69,7 @@ public class GolfCourseTestHarness {
         
         // Initialize Matryoshka tools for each phase
         lidarMcp = new LidarMcpTool(courseService);
-        phase2aMcp = new Phase2aMcpTool(courseService);
+        phase1aMcp = new Phase1aMcpTool(courseService);
         unityTerrainMcp = new UnityTerrainMcpTool(courseService);
         svgConvertMcp = new SvgConvertMcpTool(courseService);
         blenderMcp = new BlenderMcpTool(courseService);
@@ -77,22 +77,22 @@ public class GolfCourseTestHarness {
         
         // Top-level Matryoshka tool
         courseBuilderTool = new GolfCourseBuilderMatryoshkaTool(
-            lidarMcp, phase2aMcp, unityTerrainMcp, svgConvertMcp, blenderMcp, unityAssemblyMcp
+            lidarMcp, phase1aMcp, unityTerrainMcp, svgConvertMcp, blenderMcp, unityAssemblyMcp
         );
         
         // Initialize tool registry
         List<Tool> allTools = List.of(
-            courseBuilderTool, lidarMcp, phase2aMcp, 
+            courseBuilderTool, lidarMcp, phase1aMcp, 
             unityTerrainMcp, svgConvertMcp, blenderMcp, unityAssemblyMcp
         );
         toolRegistry = new ToolRegistry(allTools);
         
         // Initialize agents
         workflowAgent = new GolfCourseWorkflowAgent(toolRegistry, courseBuilderTool, courseService);
-        phase2aAgent = new Phase2aAgent(toolRegistry, phase2aMcp, courseService);
+        phase1aAgent = new Phase1aAgent(toolRegistry, phase1aMcp, courseService);
         blenderAgent = new BlenderAgent(toolRegistry, blenderMcp, courseService);
         
-        agentRouter = new AgentRouter(List.of(workflowAgent, phase2aAgent, blenderAgent));
+        agentRouter = new AgentRouter(List.of(workflowAgent, phase1aAgent, blenderAgent));
         
         System.out.println("\nInitialized:");
         System.out.println("  - Tool Registry with " + toolRegistry.getTopLevelTools().size() + " top-level tools");
@@ -127,7 +127,7 @@ public class GolfCourseTestHarness {
             
             assertThat(nestedNames).containsExactly(
                 "lidar_mcp",
-                "phase2a_mcp",
+                "phase1a_mcp",
                 "unity_terrain_mcp",
                 "svg_convert_mcp",
                 "blender_mcp",
@@ -136,27 +136,27 @@ public class GolfCourseTestHarness {
         }
         
         @Test
-        @DisplayName("Phase2a MCP contains SAM-based tracing tools")
-        void phase2aContainsSamTools() {
-            System.out.println("\n--- Test: Phase2a MCP Tool Hierarchy ---");
+        @DisplayName("Phase1a MCP contains SAM-based tracing tools")
+        void phase1aContainsSamTools() {
+            System.out.println("\n--- Test: Phase1a MCP Tool Hierarchy ---");
             
-            assertThat(phase2aMcp.isMatryoshka()).isTrue();
+            assertThat(phase1aMcp.isMatryoshka()).isTrue();
             
-            List<String> nestedNames = phase2aMcp.getNestedTools().stream()
+            List<String> nestedNames = phase1aMcp.getNestedTools().stream()
                 .map(Tool::getName)
                 .toList();
             
-            System.out.println("Phase2a MCP tools:");
+            System.out.println("Phase1a MCP tools:");
             nestedNames.forEach(n -> System.out.println("  - " + n));
             
             assertThat(nestedNames).contains(
-                "phase2a_run",
-                "phase2a_generate_masks",
-                "phase2a_classify",
-                "phase2a_interactive_select",
-                "phase2a_generate_svg",
-                "phase2a_export_png",
-                "phase2a_validate"
+                "phase1a_run",
+                "phase1a_generate_masks",
+                "phase1a_classify",
+                "phase1a_interactive_select",
+                "phase1a_generate_svg",
+                "phase1a_export_png",
+                "phase1a_validate"
             );
         }
         
@@ -202,13 +202,13 @@ public class GolfCourseTestHarness {
             System.out.println("golf_course_builder.list() returned " + 
                 topResult.suggestedTools().size() + " phase tools");
             
-            // Phase2a level
-            ToolResult phase2aResult = phase2aMcp.execute(Map.of("operation", "list"));
-            assertThat(phase2aResult.success()).isTrue();
-            assertThat(phase2aResult.hasNestedTools()).isTrue();
+            // Phase1a level
+            ToolResult phase1aResult = phase1aMcp.execute(Map.of("operation", "list"));
+            assertThat(phase1aResult.success()).isTrue();
+            assertThat(phase1aResult.hasNestedTools()).isTrue();
             
-            System.out.println("phase2a_mcp.list() returned " + 
-                phase2aResult.suggestedTools().size() + " SAM tools");
+            System.out.println("phase1a_mcp.list() returned " + 
+                phase1aResult.suggestedTools().size() + " SAM tools");
         }
     }
     
@@ -243,25 +243,25 @@ public class GolfCourseTestHarness {
         }
         
         @Test
-        @DisplayName("Routes Phase2a tasks to Phase2aAgent")
-        void routesPhase2aTasks() {
-            System.out.println("\n--- Test: Agent Routing for Phase2a Tasks ---");
+        @DisplayName("Routes Phase1a tasks to Phase1aAgent")
+        void routesPhase1aTasks() {
+            System.out.println("\n--- Test: Agent Routing for Phase1a Tasks ---");
             
-            String[] phase2aTasks = {
+            String[] phase1aTasks = {
                 "Generate masks from satellite image using SAM",
                 "Classify features from the masks", 
-                "Run phase2a interactive selection",
+                "Run phase1a interactive selection",
                 "Use segment anything model on satellite"
             };
             
-            for (String task : phase2aTasks) {
+            for (String task : phase1aTasks) {
                 Optional<Agent> agent = agentRouter.route(task);
                 assertThat(agent)
                     .as("Task: " + task)
                     .isPresent()
                     .get()
                     .extracting(Agent::getName)
-                    .isEqualTo("Phase2aAgent");
+                    .isEqualTo("Phase1aAgent");
                 System.out.println("\"" + task + "\" -> " + agent.get().getName());
             }
         }
@@ -341,21 +341,21 @@ public class GolfCourseTestHarness {
             System.out.println("  ✓ " + terrainSetupResult.message());
             System.out.println("  Gate completed: terrain_ready");
             
-            // Phase 2: Phase2a SAM-based tracing
-            System.out.println("\n--- PHASE 2: Course Tracing (Phase2a - SAM) ---");
+            // Phase 2: Phase1a SAM-based tracing
+            System.out.println("\n--- PHASE 2: Course Tracing (Phase1a - SAM) ---");
             
-            ToolResult phase2aResult = phase2aMcp.execute(Map.of(
-                "operation", "phase2a_run",
+            ToolResult phase1aResult = phase1aMcp.execute(Map.of(
+                "operation", "phase1a_run",
                 "parameters", Map.of(
                     "courseId", courseId,
                     "satelliteImage", "/input/pine_valley_satellite.png",
                     "checkpoint", "checkpoints/sam_vit_h_4b8939.pth"
                 )
             ));
-            assertThat(phase2aResult.success()).isTrue();
-            assertThat(phase2aResult.data().get("gateCompleted")).isEqualTo("svg_complete");
-            System.out.println("  ✓ " + phase2aResult.message());
-            System.out.println("  Features: " + phase2aResult.data().get("featuresClassified"));
+            assertThat(phase1aResult.success()).isTrue();
+            assertThat(phase1aResult.data().get("gateCompleted")).isEqualTo("svg_complete");
+            System.out.println("  ✓ " + phase1aResult.message());
+            System.out.println("  Features: " + phase1aResult.data().get("featuresClassified"));
             System.out.println("  Gate completed: svg_complete");
             
             // Phase 3: Unity Terrain Refinement
@@ -366,7 +366,7 @@ public class GolfCourseTestHarness {
                 "parameters", Map.of(
                     "courseId", courseId,
                     "projectPath", "/Unity/PineValley",
-                    "pngFile", "/output/" + courseId + "/phase2a/exports/overlay.png"
+                    "pngFile", "/output/" + courseId + "/phase1a/exports/overlay.png"
                 )
             ));
             assertThat(overlayResult.success()).isTrue();
@@ -388,7 +388,7 @@ public class GolfCourseTestHarness {
                 "operation", "svg_convert",
                 "parameters", Map.of(
                     "courseId", courseId,
-                    "svgFile", phase2aResult.data().get("svgFile")
+                    "svgFile", phase1aResult.data().get("svgFile")
                 )
             ));
             assertThat(svgConvertResult.success()).isTrue();
@@ -545,24 +545,24 @@ public class GolfCourseTestHarness {
     class ToolSelectionTests {
         
         @Test
-        @DisplayName("Selects correct Phase2a tools")
-        void selectsCorrectPhase2aTools() {
-            System.out.println("\n--- Test: Phase2a Tool Selection ---");
+        @DisplayName("Selects correct Phase1a tools")
+        void selectsCorrectPhase1aTools() {
+            System.out.println("\n--- Test: Phase1a Tool Selection ---");
             
             GolfCourse course = courseService.createCourse("Tool Select Test", "Test");
             String courseId = course.getId();
             
-            // Test each Phase2a operation
+            // Test each Phase1a operation
             Map<String, String> operations = Map.of(
-                "phase2a_run", "Run complete pipeline",
-                "phase2a_generate_masks", "Generate SAM masks",
-                "phase2a_classify", "Classify features",
-                "phase2a_interactive_select", "Interactive selection",
-                "phase2a_generate_svg", "Generate SVG"
+                "phase1a_run", "Run complete pipeline",
+                "phase1a_generate_masks", "Generate SAM masks",
+                "phase1a_classify", "Classify features",
+                "phase1a_interactive_select", "Interactive selection",
+                "phase1a_generate_svg", "Generate SVG"
             );
             
             for (Map.Entry<String, String> op : operations.entrySet()) {
-                ToolResult result = phase2aMcp.execute(Map.of(
+                ToolResult result = phase1aMcp.execute(Map.of(
                     "operation", op.getKey(),
                     "parameters", Map.of(
                         "courseId", courseId,
@@ -698,20 +698,20 @@ public class GolfCourseTestHarness {
                     tool.getDescription().substring(0, Math.min(50, tool.getDescription().length())) + "...")
             );
             
-            // Level 3: LLM drills into phase2a_mcp
-            System.out.println("\n3. LLM drills into 'phase2a_mcp' for SAM tools:");
+            // Level 3: LLM drills into phase1a_mcp
+            System.out.println("\n3. LLM drills into 'phase1a_mcp' for SAM tools:");
             System.out.println("-".repeat(40));
-            ToolResult level2 = phase2aMcp.execute(Map.of("operation", "list"));
+            ToolResult level2 = phase1aMcp.execute(Map.of("operation", "list"));
             level2.suggestedTools().forEach(tool -> 
                 System.out.println("   • " + tool.getName())
             );
             
             // Level 4: LLM executes specific tool
-            System.out.println("\n4. LLM executes 'phase2a_run' with parameters:");
+            System.out.println("\n4. LLM executes 'phase1a_run' with parameters:");
             System.out.println("-".repeat(40));
             GolfCourse course = courseService.createCourse("Demo Course", "Demo");
-            ToolResult result = phase2aMcp.execute(Map.of(
-                "operation", "phase2a_run",
+            ToolResult result = phase1aMcp.execute(Map.of(
+                "operation", "phase1a_run",
                 "parameters", Map.of(
                     "courseId", course.getId(),
                     "satelliteImage", "/input/demo_satellite.png",

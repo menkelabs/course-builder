@@ -6,7 +6,7 @@ This document provides a step-by-step walkthrough for processing a complete golf
 
 - Python 3.10+ with virtual environment activated
 - SAM checkpoint file (`sam_vit_h_4b8939.pth`) in `checkpoints/` directory
-- Satellite image of golf course (e.g., `phase2a/resources/Pictatinny_B.jpg`)
+- Satellite image of golf course (e.g., `phase1a/resources/Pictatinny_B.jpg`)
 - Optional: Green centers JSON file for hole assignment
 
 ## Overview
@@ -30,8 +30,8 @@ The complete pipeline processes a golf course through these stages:
 For best results, use the interactive selection workflow which will automatically extract green center coordinates:
 
 ```bash
-cd phase2a
-phase2a select ../phase2a/resources/Pictatinny_B.jpg \
+cd phase1a
+phase1a select ../phase1a/resources/Pictatinny_B.jpg \
   --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_interactive
@@ -59,7 +59,7 @@ phase2a select ../phase2a/resources/Pictatinny_B.jpg \
 **Option A: Using automatically extracted green centers from interactive selection:**
 
 ```bash
-phase2a run ../phase2a/resources/Pictatinny_B.jpg \
+phase1a run ../phase1a/resources/Pictatinny_B.jpg \
   --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
   --green-centers test_interactive/metadata/green_centers.json \
   --device cuda \
@@ -83,7 +83,7 @@ cat > green_centers.json << EOF
 ]
 EOF
 
-phase2a run ../phase2a/resources/Pictatinny_B.jpg \
+phase1a run ../phase1a/resources/Pictatinny_B.jpg \
   --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
   --green-centers green_centers.json \
   --device cuda \
@@ -94,8 +94,8 @@ phase2a run ../phase2a/resources/Pictatinny_B.jpg \
 Run the full automated pipeline:
 
 ```bash
-cd phase2a
-phase2a run ../phase2a/resources/Pictatinny_B.jpg \
+cd phase1a
+phase1a run ../phase1a/resources/Pictatinny_B.jpg \
   --checkpoint ../checkpoints/sam_vit_h_4b8939.pth \
   --green-centers green_centers.json \
   --device cuda \
@@ -108,7 +108,7 @@ phase2a run ../phase2a/resources/Pictatinny_B.jpg \
 **Expected Output:**
 ```
 Phase 2A Pipeline
-Input:  phase2a/resources/Pictatinny_B.jpg
+Input:  phase1a/resources/Pictatinny_B.jpg
 Output: test_output
 
 Stage 1: Generating masks...
@@ -283,7 +283,7 @@ For manual hole-by-hole selection:
 ### Step 1: Generate Masks
 
 ```bash
-phase2a generate-masks phase2a/resources/Pictatinny_B.jpg \
+phase1a generate-masks phase1a/resources/Pictatinny_B.jpg \
   --checkpoint checkpoints/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_masks
@@ -292,7 +292,7 @@ phase2a generate-masks phase2a/resources/Pictatinny_B.jpg \
 ### Step 2: Interactive Selection
 
 ```bash
-phase2a select phase2a/resources/Pictatinny_B.jpg \
+phase1a select phase1a/resources/Pictatinny_B.jpg \
   --checkpoint checkpoints/sam_vit_h_4b8939.pth \
   --device cuda \
   -o test_interactive
@@ -316,9 +316,9 @@ phase2a select phase2a/resources/Pictatinny_B.jpg \
 The interactive selections can be converted to SVG using the pipeline:
 
 ```python
-from phase2a.client import Phase2AClient
-from phase2a.config import Phase2AConfig
-from phase2a.pipeline.interactive import InteractiveSelector
+from phase1a.client import Phase1AClient
+from phase1a.config import Phase1AConfig
+from phase1a.pipeline.interactive import InteractiveSelector
 from pathlib import Path
 
 # Load selections
@@ -381,7 +381,7 @@ Here's a focused example for processing just Hole 1:
 
 ```bash
 # 1. Generate masks
-phase2a generate-masks image.jpg --checkpoint sam.pth -o masks/
+phase1a generate-masks image.jpg --checkpoint sam.pth -o masks/
 
 # 2. Run pipeline with focus on Hole 1
 # (In practice, you'd filter assignments or use interactive selection)
@@ -406,6 +406,6 @@ After successful SVG generation:
 
 ## References
 
-- [Phase 2A Design Specification](../phase2a.md)
+- [Phase 1A design](../phase1a.md)
 - [README](../README.md)
 - [Visual Workflow Guide](images/workflow_step1_masks.jpg)
