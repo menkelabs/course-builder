@@ -4,6 +4,16 @@ A Spring Boot application demonstrating the **Matryoshka Tool Pattern** for buil
 
 > **Note**: This is the agent orchestration component of the course builder pipeline. See the [main README](../README.md) for an overview of all components and [plan.md](../plan.md) for the full automation specification.
 
+### Libraries and components
+
+| Component | Role |
+|-----------|------|
+| **course-builder** (this app) | Spring Boot GOAP + Matryoshka tools. Orchestrates the full workflow (LIDAR → Phase1a → Unity → Blender → Unity). Phase1a operations are exposed as nested tools under `phase1a_mcp`. |
+| **python-agent** | FastAPI service that exposes Phase 1A (SAM, masks, classification, SVG) as REST actions for the [Embabel](https://github.com/embabel/embabel-agent) platform. Same Phase 1A operations as the Matryoshka Phase1a tools. |
+| **phase1a** | Python library and CLI for interactive tracing and SVG export (SegFormer + SAM). Used by the python-agent and by the Phase1a CLI. |
+
+When `coursebuilder.python-agent.url` is set, the **Matryoshka Phase1a tools delegate to the Python agent** instead of mocks: each `phase1a_*` tool calls `POST /api/v1/actions/execute`, and the Python agent runs the Phase 1A pipeline. That keeps a single Phase 1A implementation (Python) while the Java app handles orchestration, UI, and workflow state.
+
 ## Overview
 
 This project implements the course builder workflow from [plan.md](../plan.md) using **Goal-Oriented Action Planning (GOAP)** combined with the nested tools pattern (Matryoshka tools) from [embabel-agent PR #1289](https://github.com/embabel/embabel-agent/pull/1289).
@@ -222,14 +232,34 @@ Checkpoints that must be completed before proceeding:
 - **Hole 98**: Cart paths (features that cut through other objects)
 - **Hole 99**: Outer mesh (deep rough spanning multiple holes)
 
-## Integration with Phase1a
+## Integration with Phase1a and Python Agent
 
-This project integrates with the existing Phase1a Python pipeline for SAM-based course tracing. The `Phase1aMcpTool` wraps the Python CLI:
+Phase1a (SAM-based satellite tracing) is implemented in Python. The **Matryoshka Phase1a tools** can use it in two ways:
+
+### 1. Python agent (recommended when running Phase 1A for real)
+
+When `coursebuilder.python-agent.url` is set (e.g. `http://localhost:8000`), the Phase1a nested tools (**phase1a_run**, **phase1a_generate_masks**, **phase1a_classify**, **phase1a_generate_svg**, **phase1a_export_png**, **phase1a_validate**) delegate to the [Python agent](../python-agent/README.md) REST API instead of mocks. The Python agent runs the Phase 1A pipeline (phase1a library) and exposes the same operations as remote actions.
+
+**Setup:**
 
 ```bash
-phase1a run satellite.png --checkpoint checkpoints/sam_vit_h_4b8939.pth -o output/
-phase1a select satellite.png --checkpoint ... -o output/  # Interactive mode
+# Terminal 1: start Python agent
+cd python-agent && pip install -e ".[phase1a]" && python -m agent serve --port 8000
+
+# Terminal 2: run course-builder with Python agent URL
+export PYTHON_AGENT_URL=http://localhost:8000
+cd course-builder && ./mvnw spring-boot:run
 ```
+
+Or set `coursebuilder.python-agent.url: http://localhost:8000` in `application.yml`.
+
+**Flow:** Matryoshka tool (e.g. `phase1a_run`) → `Phase1aPythonAgentClient` → `POST /api/v1/actions/execute` → Python agent runs Phase 1A → result mapped back to `ToolResult`. Parameters use snake_case on the wire; the client converts to/from camelCase for Java.
+
+### 2. Mocks (default)
+
+If the Python agent URL is not set, Phase1a tools use in-process mocks (no Python or CLI). This is the default for tests and for running the workflow UI without the Phase 1A pipeline.
+
+**Note:** `phase1a_interactive_select` (interactive GUI) is not yet exposed by the Python agent; it always uses mocks. Use the Phase1a CLI (`phase1a select ...`) for interactive selection.
 
 ## References
 

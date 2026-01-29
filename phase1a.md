@@ -221,7 +221,7 @@ exports/
 ## Artifacts
 
 ```
-phase2a/
+phase1a/
   satellite_normalized.png
   masks/
   polygons/
@@ -237,7 +237,7 @@ All outputs must be reproducible from inputs.
 
 ## Validation — svg_complete
 
-Phase 2A is complete when:
+Phase 1A is complete when:
 
 - course.svg exists and loads
 - Layers exist for holes 1–18, 98, 99
