@@ -6,6 +6,7 @@ Build golf course geometry and assets from satellite imagery and lidar. Active w
 
 - **phase1_1**: Train SegFormer-B3 on Danish Golf Courses, run inference, masks → polygons → SVG.
 - **phase1a**: Interactive tracing (SegFormer pre-segment + SAM refinement), hole assignment, SVG export.
+- **python-agent**: Exposes Phase 1A as remote actions (REST API) for the [Embabel](https://github.com/embabel/embabel-agent) agent platform (GOAP planning, tool execution).
 
 Legacy QGIS/terrain work and the older roadmap are **archived** in `archive/`. See [docs/ROADMAP.md](docs/ROADMAP.md) for Phases 1–4.
 
@@ -31,11 +32,21 @@ Requires `phase1a/resources/archive.zip` (Danish Golf Courses). See [phase1_1/RE
 
 Draw outlines → SAM masks → assign to holes → SVG. SegFormer integration (pre-segment → phase1a) is in progress; see [phase1_1/WORKFLOW_INTEGRATION.md](phase1_1/WORKFLOW_INTEGRATION.md).
 
+### 3. Python agent (optional)
+
+```bash
+.venv/bin/pip install -e "python-agent[phase1a]"
+.venv/bin/python -m agent serve --port 8000
+```
+
+Exposes Phase 1A actions as REST endpoints for the [Embabel](https://github.com/embabel/embabel-agent) agent platform. See [python-agent/README.md](python-agent/README.md).
+
 ## Project Layout
 
 ```
 ├── phase1_1/          # SegFormer training & inference
 ├── phase1a/            # Interactive tracing, SVG export
+├── python-agent/       # Phase 1A remote actions (Embabel REST API)
 ├── archive/            # Phase 1, old ROADMAP, workspace (inactive)
 ├── docs/               # ROADMAP, testing, etc.
 ├── course-builder/     # Spring Boot agent (optional)
@@ -54,4 +65,5 @@ Draw outlines → SAM masks → assign to holes → SVG. SegFormer integration (
 - [Phase 1.1 training & workflow](phase1_1/README.md)
 - [Phase 1.1 ↔ phase1a integration](phase1_1/WORKFLOW_INTEGRATION.md)
 - [Phase 1A CLI & GUI](phase1a/README.md)
+- [Python agent](python-agent/README.md) (Phase 1A remote actions, Embabel integration)
 - [Testing](docs/TESTING.md)
