@@ -7,6 +7,7 @@ Build golf course geometry and assets from satellite imagery and lidar. Active w
 - **phase1_1**: Train SegFormer-B3 on Danish Golf Courses, run inference, masks → polygons → SVG.
 - **phase1a**: Interactive tracing (SegFormer pre-segment + SAM refinement), hole assignment, SVG export.
 - **python-agent**: Exposes Phase 1A as remote actions (REST API) for the [Embabel](https://github.com/embabel/embabel-agent) agent platform (GOAP planning, tool execution).
+- **course-builder**: Spring Boot GOAP + Matryoshka tools for the full workflow. Phase1a operations live under `phase1a_mcp`. When `coursebuilder.python-agent.url` is set, those tools delegate to the **python-agent** instead of mocks (single Phase 1A implementation, Java orchestration).
 
 Legacy QGIS/terrain work and the older roadmap are **archived** in `archive/`. See [docs/ROADMAP.md](docs/ROADMAP.md) for Phases 1–4.
 
@@ -49,7 +50,7 @@ Exposes Phase 1A actions as REST endpoints for the [Embabel](https://github.com/
 ├── python-agent/       # Phase 1A remote actions (Embabel REST API)
 ├── archive/            # Phase 1, old ROADMAP, workspace (inactive)
 ├── docs/               # ROADMAP, testing, etc.
-├── course-builder/     # Spring Boot agent (optional)
+├── course-builder/     # Spring Boot GOAP + Matryoshka; Phase1a → python-agent when configured
 └── .venv/              # Shared Python venv (project root)
 ```
 

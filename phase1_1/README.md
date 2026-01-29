@@ -1,6 +1,6 @@
 # Phase 2.1 – SegFormer semantic segmentation
 
-Train SegFormer-B3 on **Danish Golf Courses** (`archive.zip`), then run inference → masks → polygons → SVG. Phase2a uses this **SegFormer data** (pre-segment → interactive assign → refine with SAM). Part of **Phase 1** (splining from sat + lidar) in the [4-phase roadmap](../docs/ROADMAP.md). See [WORKFLOW_INTEGRATION.md](WORKFLOW_INTEGRATION.md).
+Train SegFormer-B3 on **Danish Golf Courses** (`archive.zip`), then run inference → masks → polygons → SVG. Phase1a uses this **SegFormer data** (pre-segment → interactive assign → refine with SAM). Part of **Phase 1** (splining from sat + lidar) in the [4-phase roadmap](../docs/ROADMAP.md). See [WORKFLOW_INTEGRATION.md](WORKFLOW_INTEGRATION.md).
 
 ## Training
 

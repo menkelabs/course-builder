@@ -23,3 +23,6 @@ coursebuilder:
   agents:
     max-tool-depth: 3
     enable-mock-mode: true
+  # Python agent (Phase 1A remote actions). When set, Phase1a Matryoshka tools delegate here instead of mocks.
+  python-agent:
+    url: ${PYTHON_AGENT_URL:}

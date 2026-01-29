@@ -10,6 +10,7 @@ This enables Python tools to participate in the Embabel agent platform's GOAP (G
 - **GOAP Integration**: Actions have preconditions, postconditions, cost, and value for intelligent planning
 - **Phase 1A Support**: Full integration with Phase 1A (SegFormer + SAM) satellite tracing pipeline
 - **Registration**: Automatic registration with Embabel server
+- **Matryoshka integration**: The [course-builder](../course-builder/README.md) Phase1a Matryoshka tools can delegate to this agent. Set `coursebuilder.python-agent.url` (e.g. `http://localhost:8000`) and run the Python agent; Phase1a nested tools (`phase1a_run`, `phase1a_generate_masks`, etc.) call `POST /api/v1/actions/execute` instead of mocks.
 
 ## API Endpoints
 
