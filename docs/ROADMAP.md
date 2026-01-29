@@ -1,244 +1,76 @@
-# Course Builder AI Automation Roadmap
+# Course Builder Roadmap (4 Phases)
 
-## Overview
-
-This roadmap outlines the path from manual course tracing to fully automated AI-assisted course creation. The goal is to progressively reduce human effort while maintaining high-quality output.
-
-## Current State (Phase 2A)
-
-- Manual feature selection with SAM assistance
-- User draws outlines, SAM creates precise masks
-- Fill mode for completing partial masks
-- Human assigns features to holes
-
-## Roadmap
-
-### Phase 1: Training Data Collection (Current)
-
-**Goal:** Every manual session generates training data for future automation.
-
-**Features:**
-- Export labeled masks from interactive sessions
-- Save image regions + classification labels
-- Format compatible with model fine-tuning
-
-**Output:**
-```
-training_data/
-├── images/
-│   ├── course_001_region_0001.png
-│   ├── course_001_region_0002.png
-│   └── ...
-├── masks/
-│   ├── course_001_region_0001_mask.png
-│   └── ...
-└── labels.json  # {region: "green"|"fairway"|"bunker"|...}
-```
+Four phases, ordered by priority. **Phases 1 & 2** get you a course; **Phase 3** makes it look better; **Phase 4** gets to a solid course-builder level.
 
 ---
 
-### Phase 2: Grounding DINO Integration
+## Phase 1: Splining from sat image and lidar
 
-**Goal:** Automated feature detection with zero API costs.
+**Goal:** Terrain and feature splines (fairways, greens, bunkers, water, etc.) from satellite imagery and lidar.
 
-**Architecture:**
-```
-┌─────────────────┐
-│ Satellite Image │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────┐
-│ Grounding DINO (Local, Free)                    │
-│ Prompts: "golf green", "fairway", "sand bunker" │
-└────────┬────────────────────────────────────────┘
-         │ Bounding boxes per feature
-         ▼
-┌─────────────────┐
-│ SAM Segmentation│
-└────────┬────────┘
-         │ Precise masks
-         ▼
-┌─────────────────────────────────────┐
-│ Contextual Validation               │
-│ • Green at end of fairway?          │
-│ • Bunkers near green?               │
-│ • Sizes within normal range?        │
-└────────┬────────────────────────────┘
-         │
-         ▼
-    ┌─────────────┐
-    │ Confidence  │
-    │ Score       │
-    └──────┬──────┘
-           │
-     ┌─────┴─────┐
-     ▼           ▼
-┌─────────┐ ┌─────────────┐
-│ Auto-   │ │ Human Review│
-│ Accept  │ │ (Low Conf)  │
-└────┬────┘ └──────┬──────┘
-     │             │
-     └──────┬──────┘
-            ▼
-      ┌──────────┐
-      │ SVG Out  │
-      └──────────┘
-```
+**Current work (mapped here):**
+- **phase1_1**: SegFormer-B3 trained on Danish Golf Courses → semantic segmentation → masks → polygons → SVG.
+- **phase1a**: Interactive tracing (SegFormer pre-segment + SAM refinement), hole assignment, SVG export.
 
-**Implementation:** See [GROUNDING-DINO.md](GROUNDING-DINO.md)
+**Deliverables:**
+- Semantic segmentation over ortho imagery (SegFormer).
+- Vector splines / polygons (per-hole, per-feature) and SVG suitable for terrain + overlay.
+- Lidar integrated where available (e.g. elevation, refinement).
 
-**Effort:** 1-2 days
+**Success:** Reliable splining from sat (+ lidar) → editable vector output.
 
 ---
 
-### Phase 3: Model Fine-Tuning
+## Phase 2: Tree / foliage planting
 
-**Goal:** Train a golf-specific model on collected data.
+**Goal:** Tree and foliage placement from a combination of satellite imagery, course location, and lidar.
 
-**When:** After collecting 100+ labeled courses
+**Deliverables:**
+- Detection of tree canopy / vegetation from sat (and lidar where applicable).
+- Placement rules or maps (e.g. density, species proxies) using course location.
+- Export of tree/foliage layout for the course (e.g. for Unity/Blender).
 
-**Approach:**
-- Fine-tune Grounding DINO or train YOLO on golf features
-- Model learns golf-specific patterns (green shapes, fairway textures)
-- Higher accuracy than zero-shot detection
-
-**Expected Improvement:**
-- Zero-shot Grounding DINO: ~70-80% accuracy
-- Fine-tuned model: ~90-95% accuracy
+**Success:** Plausible tree and foliage cover; **Phases 1 + 2** together yield a **playable course**.
 
 ---
 
-### Phase 4: Bidirectional MCP Communication
+## Phase 3: Texture colors from example course pictures
 
-**Goal:** AI agent can observe and control interactive sessions.
+**Goal:** Derive texture and color palettes from reference course photos to improve appearance.
 
-**Architecture:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Embabel AI Agent                         │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ MCP Protocol
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│ Phase2A       │    │ Blender       │    │ Unity         │
-│ (matplotlib)  │    │ Addon         │    │ Plugin        │
-└───────────────┘    └───────────────┘    └───────────────┘
-```
+**Deliverables:**
+- Use example course images (e.g. fairway, rough, green) to extract color/texture cues.
+- Map those to surface types (fairway, rough, bunker, etc.) and apply in-engine.
 
-#### Phase2A MCP Server
-
-**Tools (Agent → Matplotlib):**
-| Tool | Description |
-|------|-------------|
-| `draw_mask(points, hole, feature)` | Draw a mask from coordinates |
-| `set_mode(mode)` | Switch SAM/FILL mode |
-| `confirm_selection()` | Press Done |
-| `undo_last()` | Undo last mask |
-| `merge_masks(ids)` | Merge selected masks |
-| `zoom_to(x, y, level)` | Zoom to location |
-
-**Resources (Matplotlib → Agent):**
-| Resource | Description |
-|----------|-------------|
-| `phase2a://current_view` | Screenshot of current state |
-| `phase2a://selections` | Current selections JSON |
-| `phase2a://events` | Stream of user actions |
-
-#### Blender MCP Server
-
-**Tools:**
-| Tool | Description |
-|------|-------------|
-| `import_svg(path)` | Import course SVG |
-| `extrude_region(layer, height)` | Extrude greens/bunkers |
-| `apply_material(object, material)` | Apply textures |
-| `sculpt_terrain(brush, points)` | Terrain modification |
-| `render_preview()` | Render current view |
-| `export_fbx(path)` | Export for game engines |
-
-#### Unity MCP Server
-
-**Tools:**
-| Tool | Description |
-|------|-------------|
-| `place_hole(hole_num, position)` | Place hole in scene |
-| `paint_texture(region, type)` | Paint terrain textures |
-| `place_object(prefab, position)` | Place trees, flags, etc. |
-| `get_camera_view()` | Screenshot from camera |
-| `run_play_test()` | Test the course |
-| `export_course(format)` | Export final course |
+**Success:** **Better-looking** course via data-driven texture/color from real examples.
 
 ---
 
-### Phase 5: End-to-End Automation
+## Phase 4: Bunker shaping from an example bunker pic
 
-**Goal:** Satellite image → Playable course with minimal human input.
+**Goal:** Shape bunkers using a reference bunker image (and optionally lidar / sat).
 
-**Workflow:**
-```
-1. User provides: Satellite image + Course name
-                        │
-                        ▼
-2. Grounding DINO + SAM: Auto-detect all features
-                        │
-                        ▼
-3. Human review: Approve/correct low-confidence detections
-                        │
-                        ▼
-4. SVG generation: Layered vector output
-                        │
-                        ▼
-5. Blender (automated): Generate 3D terrain
-                        │
-                        ▼
-6. Unity (automated): Assemble playable course
-                        │
-                        ▼
-7. Output: GSPro-ready course package
-```
+**Deliverables:**
+- Use an example bunker photo to guide form, edges, and appearance.
+- Combine with Phase 1 bunker outlines and terrain to produce shaped bunker geometry.
 
-**Human involvement:** ~15 minutes per course (review only)
+**Success:** **Decent course-builder level** — bunkers that match a desired style.
 
 ---
 
-## Technology Stack
+## Priority summary
 
-| Component | Technology | Cost |
-|-----------|------------|------|
-| Object Detection | Grounding DINO | Free (local) |
-| Segmentation | SAM | Free (local) |
-| 3D Generation | Blender | Free |
-| Game Assembly | Unity | Free (personal) |
-| AI Orchestration | Embabel + MCP | TBD |
+| Phase | Focus | Outcome |
+|-------|--------|---------|
+| **1** | Splining (sat + lidar) | Vector terrain + features (SVG, etc.) |
+| **2** | Tree/foliage planting | Playable course (1 + 2) |
+| **3** | Texture colors from examples | Better-looking course |
+| **4** | Bunker shaping from example | Solid course-builder quality |
 
-## Hardware Requirements
+Active implementation is **Phase 1** (phase1_1 + phase1a). Phases 2–4 are planned; scope may shift as we learn.
 
-| Stage | Minimum | Recommended |
-|-------|---------|-------------|
-| Detection (DINO + SAM) | 8GB VRAM | 16GB VRAM |
-| Blender rendering | 8GB RAM | 32GB RAM |
-| Unity | 8GB RAM | 16GB RAM |
+---
 
-## Timeline Estimates
+## Archived
 
-| Phase | Effort | Dependencies |
-|-------|--------|--------------|
-| Training Data Export | 4-6 hours | None |
-| Grounding DINO Integration | 1-2 days | None |
-| Model Fine-Tuning | 2-3 days | 100+ labeled courses |
-| Phase2A MCP Server | 2-3 days | None |
-| Blender MCP Server | 3-5 days | Blender addon experience |
-| Unity MCP Server | 3-5 days | Unity plugin experience |
-| End-to-End Pipeline | 1-2 weeks | All above |
-
-## Success Metrics
-
-| Metric | Current | Phase 2 | Phase 5 |
-|--------|---------|---------|---------|
-| Time per course | 2-4 hours | 30-60 min | 15 min |
-| Human actions | ~500 clicks | ~50 clicks | ~10 clicks |
-| Automation rate | 0% | 70% | 95% |
-| Cost per course | $0 (time only) | $0 | $0 |
+- Old QGIS/terrain Phase 1, Grounding DINO (`archive/GROUNDING-DINO.md`), broader MCP roadmap → `archive/` (see `archive/ROADMAP.md`, `archive/README.md`).

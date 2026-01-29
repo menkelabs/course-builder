@@ -56,7 +56,7 @@
 
 ```bash
 # Run all tests (including GUI)
-cd phase2a
+cd phase1a
 pytest
 
 # Run only GUI tests

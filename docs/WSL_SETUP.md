@@ -1,6 +1,6 @@
-# WSL2 Setup Guide for SAM + Grounding DINO
+# WSL2 Setup for Phase 1 (SegFormer + SAM)
 
-This guide walks through setting up WSL2 on Windows to run SAM (Segment Anything Model) and Grounding DINO with GPU acceleration.
+This guide walks through setting up WSL2 on Windows to run **Phase 1** of the course builder: **SegFormer** (semantic segmentation) and **SAM** (Segment Anything Model) for interactive tracing and SVG export. See [ROADMAP.md](ROADMAP.md) for the 4-phase roadmap.
 
 ## Prerequisites
 
@@ -152,8 +152,8 @@ GPU: NVIDIA GeForce RTX 3080  # (your GPU name)
 pip install git+https://github.com/facebookresearch/segment-anything.git
 
 # Download SAM model weights (~2.4GB for vit_h)
-mkdir -p models
-cd models
+mkdir -p checkpoints
+cd checkpoints
 
 # Option A: vit_h (best quality, requires 16GB+ VRAM)
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
@@ -167,38 +167,26 @@ wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 cd ..
 ```
 
-## Step 9: Install Grounding DINO
+## Step 9: Install Phase 1 Modules (phase1a + phase1_1)
 
 ```bash
-# Install Grounding DINO
-pip install groundingdino-py
+# phase1a: interactive tracing, SAM, SVG export (Phase 1)
+pip install -e "./phase1a[all]"
 
-# Download Grounding DINO weights (~1.5GB)
-cd models
-wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth
-cd ..
+# phase1_1: SegFormer training (optional; for training on Danish Golf Courses)
+pip install -e "./phase1_1[train,inference]"
+
+# Or phase1a only (no SegFormer training):
+# pip install -e "./phase1a[sam,dev,gui]"
 ```
 
-## Step 10: Install Phase2a Dependencies
+## Step 10: Verify Installation
 
-```bash
-# Install phase2a with all dependencies
-pip install -e ./phase2a[all]
-
-# Or install individually:
-pip install numpy opencv-python Pillow scikit-image shapely geopandas
-pip install svgwrite cairosvg click rich pydantic pyyaml
-pip install matplotlib PyQt5
-pip install pytest
-```
-
-## Step 11: Verify Complete Installation
-
-Create a test script `test_gpu_setup.py`:
+Create `test_gpu_setup.py` in the project root:
 
 ```python
 #!/usr/bin/env python3
-"""Verify GPU setup for SAM and Grounding DINO."""
+"""Verify GPU setup for Phase 1 (SAM + phase1a)."""
 
 import sys
 
@@ -229,50 +217,47 @@ def check_sam():
         print(f"  ERROR: {e}")
         return False
 
-def check_groundingdino():
+def check_phase1a():
     print("=" * 50)
-    print("Checking Grounding DINO...")
+    print("Checking phase1a...")
     try:
-        import groundingdino
-        print(f"  Grounding DINO imported successfully")
+        from phase1a.pipeline import masks
+        print("  phase1a imported successfully")
         return True
     except ImportError as e:
         print(f"  ERROR: {e}")
         return False
 
-def check_phase2a():
+def check_phase1_1():
     print("=" * 50)
-    print("Checking phase2a...")
+    print("Checking phase1_1 (optional)...")
     try:
-        from phase2a.pipeline import masks
-        print("  phase2a imported successfully")
+        import phase1_1
+        print("  phase1_1 imported successfully")
         return True
     except ImportError as e:
-        print(f"  ERROR: {e}")
-        return False
+        print(f"  Skip (optional): {e}")
+        return True  # not required for phase1a
 
 def main():
     results = {
         "PyTorch + CUDA": check_torch(),
         "SAM": check_sam(),
-        "Grounding DINO": check_groundingdino(),
-        "phase2a": check_phase2a(),
+        "phase1a": check_phase1a(),
+        "phase1_1": check_phase1_1(),
     }
-    
     print("=" * 50)
     print("SUMMARY:")
-    all_pass = True
+    required = ("PyTorch + CUDA", "SAM", "phase1a")
+    all_ok = all(results[k] for k in required)
     for name, passed in results.items():
         status = "✓ PASS" if passed else "✗ FAIL"
         print(f"  {name}: {status}")
-        if not passed:
-            all_pass = False
-    
     print("=" * 50)
-    if all_pass:
-        print("All checks passed! Ready to run SAM and Grounding DINO.")
+    if all_ok:
+        print("Phase 1 setup OK. Ready for SAM + phase1a.")
     else:
-        print("Some checks failed. Review errors above.")
+        print("Some required checks failed. Review errors above.")
         sys.exit(1)
 
 if __name__ == "__main__":
@@ -280,59 +265,43 @@ if __name__ == "__main__":
 ```
 
 Run it:
+
 ```bash
 python test_gpu_setup.py
 ```
 
-## Step 12: Test SAM with GPU
+## Step 11: Quick SAM Test (Optional)
 
 ```bash
-# Run a quick SAM test (requires a test image)
 python -c "
 import torch
 from segment_anything import sam_model_registry, SamPredictor
-import numpy as np
 
-# Check GPU memory
-print(f'GPU Memory before loading: {torch.cuda.memory_allocated()/1e9:.2f} GB')
-
-# Load SAM (use vit_b for testing if you have limited VRAM)
-sam = sam_model_registry['vit_h'](checkpoint='models/sam_vit_h_4b8939.pth')
+print(f'GPU Memory before: {torch.cuda.memory_allocated()/1e9:.2f} GB')
+sam = sam_model_registry['vit_h'](checkpoint='checkpoints/sam_vit_h_4b8939.pth')
 sam = sam.to('cuda')
 predictor = SamPredictor(sam)
-
-print(f'GPU Memory after loading: {torch.cuda.memory_allocated()/1e9:.2f} GB')
-print('SAM loaded successfully on GPU!')
+print(f'GPU Memory after: {torch.cuda.memory_allocated()/1e9:.2f} GB')
+print('SAM loaded on GPU.')
 "
 ```
 
-## GPU Memory Requirements
+## GPU Memory (Phase 1)
 
-| Model | VRAM Required | Notes |
-|-------|---------------|-------|
+| Model | VRAM | Notes |
+|-------|------|-------|
 | SAM vit_b | ~4 GB | Fastest, lower quality |
 | SAM vit_l | ~8 GB | Good balance |
-| SAM vit_h | ~12 GB | Best quality |
-| Grounding DINO | ~4 GB | Text-to-box detection |
-| Both (vit_h + DINO) | ~16 GB | Full pipeline |
+| SAM vit_h | ~12 GB | Best quality (recommended) |
+| SegFormer-B3 (phase1_1) | ~4–6 GB | Training / inference |
 
 ## Troubleshooting
 
 ### "CUDA not available" in PyTorch
 
-1. Verify Windows NVIDIA driver:
-   ```powershell
-   # In Windows PowerShell
-   nvidia-smi
-   ```
-
-2. Check WSL version:
-   ```powershell
-   wsl -l -v
-   # Should show VERSION 2
-   ```
-
-3. Reinstall PyTorch with correct CUDA version:
+1. Verify Windows NVIDIA driver: `nvidia-smi` in PowerShell.
+2. Check WSL version: `wsl -l -v` → VERSION 2.
+3. Reinstall PyTorch with CUDA:
    ```bash
    pip uninstall torch torchvision torchaudio
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
@@ -340,83 +309,67 @@ print('SAM loaded successfully on GPU!')
 
 ### "Out of memory" errors
 
-- Use a smaller SAM model (vit_b or vit_l)
-- Process images at lower resolution
-- Add `torch.cuda.empty_cache()` between operations
-
-### Grounding DINO build errors
-
-```bash
-# Install build dependencies
-sudo apt install -y python3.11-dev gcc g++
-
-# Reinstall
-pip uninstall groundingdino-py
-pip install groundingdino-py
-```
+- Use a smaller SAM model (vit_b or vit_l).
+- Process images at lower resolution.
+- Add `torch.cuda.empty_cache()` between heavy operations.
 
 ### Slow performance
 
-Ensure you're using GPU, not CPU:
+Ensure GPU is used:
+
 ```python
 import torch
-# Force CUDA
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+print(f"Using: {device}")
 ```
 
-## Running Phase2a
-
-Once setup is complete, you can run the phase2a pipeline:
+## Running Phase 1
 
 ```bash
-# Activate environment
 cd ~/projects/course-builder
 source .venv/bin/activate
 
-# Run interactive mask selection
-python -m phase2a select-masks \
-    --image path/to/satellite_image.png \
-    --sam-checkpoint models/sam_vit_h_4b8939.pth \
-    --output phase2a_output/
+# Interactive selection (phase1a) – recommended
+python -m phase1a select path/to/satellite.png \
+  --checkpoint checkpoints/sam_vit_h_4b8939.pth \
+  -o phase1a_output
 
-# Run tests
-.venv/bin/pytest phase2a/tests/ -v --ignore=phase2a/tests/test_gui_integration.py
+# Full pipeline (phase1a run)
+python -m phase1a run path/to/satellite.png \
+  --checkpoint checkpoints/sam_vit_h_4b8939.pth \
+  -o phase1a_output
+
+# SegFormer training (phase1_1) – optional
+python -m phase1_1 train \
+  --archive phase1a/resources/archive.zip \
+  -o phase1_1_output \
+  --epochs 50 --batch-size 8 --device cuda
+
+# Tests
+.venv/bin/pytest phase1a/tests/ -v --ignore=phase1a/tests/test_gui_integration.py
 ```
 
-## File Locations Summary
-
-After setup, your directory structure should look like:
+## Project Layout (Phase 1)
 
 ```
 ~/projects/course-builder/
-├── .venv/                          # Python virtual environment
-├── models/
-│   ├── sam_vit_h_4b8939.pth       # SAM weights (~2.4 GB)
-│   └── groundingdino_swint_ogc.pth # DINO weights (~1.5 GB)
-├── phase1/                         # QGIS pipeline
-├── phase2a/                        # SAM/DINO pipeline
+├── .venv/
+├── checkpoints/
+│   └── sam_vit_h_4b8939.pth
+├── phase1_1/           # SegFormer training & inference
+├── phase1a/            # Interactive tracing, SAM, SVG export
 │   ├── pipeline/
-│   │   ├── masks.py
-│   │   ├── svg.py
-│   │   └── ...
 │   └── tests/
+├── archive/            # Old QGIS, DINO, etc. (inactive)
 └── docs/
 ```
 
 ## Quick Reference
 
 ```bash
-# Start working
-cd ~/projects/course-builder
-source .venv/bin/activate
-
-# Check GPU status
+cd ~/projects/course-builder && source .venv/bin/activate
 nvidia-smi
-
-# Check PyTorch CUDA
 python -c "import torch; print(torch.cuda.is_available())"
-
-# Run phase2a
-python -m phase2a --help
+python -m phase1a --help
+python -m phase1_1 --help
 ```

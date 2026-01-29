@@ -60,10 +60,12 @@ checkpoints/
 *.pth
 *.ckpt
 WIP/
-phase2a/resources/archive.zip
+phase1a/resources/archive.zip
 
 # Output directories
+phase1a_output/
 phase2a_output/
+phase1_1_output/
 masks/
 polygons/
 reviews/
@@ -72,7 +74,7 @@ exports/
 *.jpg
 *.jpeg
 *.svg
-!phase2a/resources/*.jpg
+!phase1a/resources/*.jpg
 !docs/*.jpg
 
 # Logs

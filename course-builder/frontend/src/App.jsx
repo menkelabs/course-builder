@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 
 const PHASES = [
   { id: 1, name: 'Terrain Creation', gate: 'terrain_ready', tool: 'lidar_mcp' },
-  { id: 2, name: 'Course Tracing (Phase2a)', gate: 'svg_complete', tool: 'phase2a_mcp' },
+  { id: 2, name: 'Course Tracing (Phase1a)', gate: 'svg_complete', tool: 'phase1a_mcp' },
   { id: 3, name: 'Terrain Refinement', gate: 'terrain_exported', tool: 'unity_terrain_mcp' },
   { id: 4, name: 'SVG Conversion', gate: 'svg_converted', tool: 'svg_convert_mcp' },
   { id: 5, name: 'Blender Processing', gate: 'fbx_exported', tool: 'blender_mcp' },
@@ -13,7 +13,7 @@ const PHASES = [
 const QUICK_ACTIONS = [
   'Create new course',
   'Show workflow status',
-  'Run Phase2a pipeline',
+  'Run Phase1a pipeline',
   'Generate SAM masks',
   'Export FBX files',
   'Build asset bundle'
@@ -29,7 +29,7 @@ I'll help you build a complete GSPro golf course using the **"None to Done"** wo
 
 **6 Phases:**
 1. **Terrain Creation** - LIDAR to heightmap
-2. **Course Tracing** - Phase2a SAM-based SVG generation
+2. **Course Tracing** - Phase1a SAM-based SVG generation
 3. **Terrain Refinement** - Unity terrain adjustment
 4. **SVG Conversion** - GSProSVGConvert
 5. **Blender Processing** - Mesh conversion and export
